@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	"log"
 	"strconv"
 )
 
@@ -13,6 +14,8 @@ type MetricsService interface {
 type MetricsStorage struct {
 	Metrics []models.Metrics
 }
+
+var _ MetricsService = (*MetricsStorage)(nil)
 
 func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricValue string) error {
 	if metricType != "gauge" && metricType != "counter" {
@@ -51,6 +54,7 @@ func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricV
 		})
 		return nil
 	}
+	log.Printf("set metric %s", metricName)
 	return nil
 }
 

@@ -62,7 +62,7 @@ func (c *AgentConfig) ReportMetrics() {
 		lowercaseMetric := strings.ToLower(metric)
 		url := fmt.Sprintf("%s/update/%s/%s/%v", c.ServerUrl, metricType, lowercaseMetric, value)
 		log.Printf("make request %s", url)
-		resp, err := c.HTTPClient.Post(url, "application/json", nil)
+		resp, err := c.HTTPClient.Post(url, "text/plain", strings.NewReader(""))
 		if err != nil {
 			log.Printf("error reporting metrics: %v\n", err)
 			continue
@@ -109,9 +109,9 @@ func (c *AgentConfig) UpdateMetrics(memStats runtime.MemStats) Metrics {
 	}
 }
 
-func NewAgentService(client http.Client, serverBaseUrl string) *AgentConfig {
+func NewAgentService(client http.Client, serverBaseURL string) *AgentConfig {
 	return &AgentConfig{
-		ServerUrl:      serverBaseUrl,
+		ServerUrl:      serverBaseURL,
 		HTTPClient:     client,
 		PollInterval:   time.Second * 2,
 		ReportInterval: time.Second * 10,

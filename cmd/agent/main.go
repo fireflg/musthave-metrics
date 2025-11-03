@@ -13,7 +13,7 @@ func main() {
 		Jar:           nil,
 		Timeout:       5 * time.Second,
 	}
-	backendUrl := "http://localhost:8080"
-	agentService := agent.NewAgentService(client, backendUrl)
+	backendURL := "http://localhost:8080"
+	agentService := agent.NewAgentService(client, backendURL)
 	agentService.Start()
 }

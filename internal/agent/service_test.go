@@ -45,8 +45,8 @@ func TestNewAgentService(t *testing.T) {
 	url := "http://127.0.0.1:8080"
 	got := NewAgentService(client, url)
 
-	if got.ServerUrl != url {
-		t.Errorf("ServerUrl = %v, want %v", got.ServerUrl, url)
+	if got.ServerURL != url {
+		t.Errorf("ServerUrl = %v, want %v", got.ServerURL, url)
 	}
 	if got.PollInterval != 2*time.Second {
 		t.Errorf("PollInterval = %v, want 2s", got.PollInterval)

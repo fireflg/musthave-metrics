@@ -18,7 +18,7 @@ type AgentService interface {
 }
 
 type AgentConfig struct {
-	ServerUrl      string
+	ServerURL      string
 	HTTPClient     http.Client
 	PollInterval   time.Duration
 	ReportInterval time.Duration
@@ -60,7 +60,7 @@ func (c *AgentConfig) ReportMetrics() {
 			metricType = "counter"
 		}
 		lowercaseMetric := strings.ToLower(metric)
-		url := fmt.Sprintf("%s/update/%s/%s/%v", c.ServerUrl, metricType, lowercaseMetric, value)
+		url := fmt.Sprintf("%s/update/%s/%s/%v", c.ServerURL, metricType, lowercaseMetric, value)
 		log.Printf("make request %s", url)
 		resp, err := c.HTTPClient.Post(url, "text/plain", strings.NewReader(""))
 		if err != nil {
@@ -111,7 +111,7 @@ func (c *AgentConfig) UpdateMetrics(memStats runtime.MemStats) Metrics {
 
 func NewAgentService(client http.Client, serverBaseURL string) *AgentConfig {
 	return &AgentConfig{
-		ServerUrl:      serverBaseURL,
+		ServerURL:      serverBaseURL,
 		HTTPClient:     client,
 		PollInterval:   time.Second * 2,
 		ReportInterval: time.Second * 10,

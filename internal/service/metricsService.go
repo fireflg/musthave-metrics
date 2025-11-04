@@ -2,13 +2,15 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	"log"
 	"strconv"
 )
 
 type MetricsService interface {
-	SetMetric(metricType string, name string, value string) error
+	SetMetric(metricType string, metricName string, value string) error
+	GetMetric(metricType string, metricName string) (value string, err error)
 }
 
 type MetricsStorage struct {
@@ -17,9 +19,24 @@ type MetricsStorage struct {
 
 var _ MetricsService = (*MetricsStorage)(nil)
 
+func (m *MetricsStorage) GetMetric(metricType string, metricName string) (value string, err error) {
+	if err := checkMetricType(metricType); err != nil {
+		return "", err
+	}
+	for i := range m.Metrics {
+		if m.Metrics[i].ID == metricName {
+			convertedMetricValue := fmt.Sprintf("%f", *m.Metrics[i].Value)
+			return convertedMetricValue, nil
+		}
+
+	}
+
+	return "", errors.New("metric not found")
+}
+
 func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricValue string) error {
-	if metricType != "gauge" && metricType != "counter" {
-		return errors.New("invalid metric type. Use 'gauge' or 'counter'")
+	if err := checkMetricType(metricType); err != nil {
+		return err
 	}
 
 	convertedMetricValue, err := strconv.ParseFloat(metricValue, 64)
@@ -55,6 +72,13 @@ func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricV
 		return nil
 	}
 	log.Printf("set metric %s", metricName)
+	return nil
+}
+
+func checkMetricType(metricType string) error {
+	if metricType != "gauge" && metricType != "counter" {
+		return errors.New("invalid metric type. Use 'gauge' or 'counter'")
+	}
 	return nil
 }
 

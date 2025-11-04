@@ -3,17 +3,21 @@ package main
 import (
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	"github.com/go-chi/chi/v5"
+	"log"
 	"net/http"
 )
 
-func main() {
+func ServerRouter() chi.Router {
+	r := chi.NewRouter()
 	metricsService := service.NewMetricsService()
 	metricsHandler := handler.NewMetricsHandler(metricsService)
-	mux := http.NewServeMux()
-	mux.Handle("POST /update/{metricType}/{metricName}/{metricValue}",
-		http.HandlerFunc(metricsHandler.UpdateMetric))
-	err := http.ListenAndServe(`:8080`, mux)
-	if err != nil {
-		panic(err)
-	}
+	r.Get("/value/{metricType}/{metricName}", metricsHandler.GetMetric)
+	r.Post("/update/{metricType}/{metricName}/{metricValue}", metricsHandler.UpdateMetric)
+	return r
+}
+
+func main() {
+	r := ServerRouter()
+	log.Fatal(http.ListenAndServe(":8080", r))
 }

@@ -25,7 +25,7 @@ func (m *MetricsStorage) GetMetric(metricType string, metricName string) (value 
 	}
 	for i := range m.Metrics {
 		if m.Metrics[i].ID == metricName {
-			convertedMetricValue := fmt.Sprintf("%f", *m.Metrics[i].Value)
+			convertedMetricValue := fmt.Sprintf("%g", *m.Metrics[i].Value)
 			return convertedMetricValue, nil
 		}
 

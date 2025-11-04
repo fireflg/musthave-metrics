@@ -109,12 +109,12 @@ func (c *AgentConfig) UpdateMetrics(memStats runtime.MemStats) Metrics {
 	}
 }
 
-func NewAgentService(client http.Client, serverBaseURL string) *AgentConfig {
+func NewAgentService(client http.Client, serverBaseURL string, poolInterval int, reportInterval int) *AgentConfig {
 	return &AgentConfig{
 		ServerURL:      serverBaseURL,
 		HTTPClient:     client,
-		PollInterval:   time.Second * 2,
-		ReportInterval: time.Second * 10,
+		PollInterval:   time.Second * time.Duration(poolInterval),
+		ReportInterval: time.Second * time.Duration(reportInterval),
 		Metrics:        Metrics{},
 	}
 }

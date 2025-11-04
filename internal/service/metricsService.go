@@ -43,6 +43,7 @@ func (m *MetricsStorage) GetMetric(metricType string, metricName string) (value 
 
 	return "", errors.New("metric not found")
 }
+
 func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricValue string) error {
 	if err := checkMetricType(metricType); err != nil {
 		return err
@@ -53,34 +54,44 @@ func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricV
 		return errors.New("only numbers allowed")
 	}
 
-	var delta int64
-	var found bool
-
 	for i := range m.Metrics {
 		if m.Metrics[i].ID == metricName {
-			if m.Metrics[i].Value != nil {
-				delta = int64(convertedMetricValue) - int64(*m.Metrics[i].Value)
-			} else {
-				delta = 0
+			switch metricType {
+			case "counter":
+				if m.Metrics[i].Value == nil {
+					m.Metrics[i].Value = new(float64)
+				}
+				*m.Metrics[i].Value += convertedMetricValue
+				delta := int64(*m.Metrics[i].Value)
+				m.Metrics[i].Delta = &delta
+
+			case "gauge":
+				m.Metrics[i].Value = &convertedMetricValue
 			}
-			m.Metrics[i].Delta = &delta
-			m.Metrics[i].Value = &convertedMetricValue
-			found = true
-			break
+			log.Printf("set metric %s", metricName)
+			return nil
 		}
 	}
-	if !found {
-		delta = 0
+
+	switch metricType {
+	case "counter":
+		val := convertedMetricValue
+		delta := int64(val)
 		m.Metrics = append(m.Metrics, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
+			Value: &val,
 			Delta: &delta,
-			Value: &convertedMetricValue,
-			Hash:  "",
 		})
-		return nil
+	case "gauge":
+		m.Metrics = append(m.Metrics, models.Metrics{
+			ID:    metricName,
+			MType: metricType,
+			Value: &convertedMetricValue,
+			Delta: new(int64),
+		})
 	}
-	log.Printf("set metric %s", metricName)
+
 	return nil
 }
 

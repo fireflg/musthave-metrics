@@ -43,7 +43,7 @@ func TestAgentConfig_UpdateMetrics(t *testing.T) {
 func TestNewAgentService(t *testing.T) {
 	client := http.Client{}
 	url := "http://127.0.0.1:8080"
-	got := NewAgentService(client, url)
+	got := NewAgentService(client, url, 2, 10)
 
 	if got.ServerURL != url {
 		t.Errorf("ServerUrl = %v, want %v", got.ServerURL, url)

@@ -37,6 +37,6 @@ func main() {
 		Jar:           nil,
 		Timeout:       5 * time.Second,
 	}
-	agentService := agent.NewAgentService(client, flagRunAddr, flagPoolInterval, flagReportInterval)
+	agentService := agent.NewAgentService(client, "http://"+flagRunAddr, flagPoolInterval, flagReportInterval)
 	agentService.Start()
 }

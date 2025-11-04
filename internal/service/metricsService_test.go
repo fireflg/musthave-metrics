@@ -122,8 +122,10 @@ func TestMetricsStorage_SetMetric(t *testing.T) {
 }
 
 func TestMetricsStorage_GetMetric(t *testing.T) {
-	val := 50.0
+	valGauge := 50.5
+	valCounter := 10.0
 	delta := int64(0)
+
 	tests := []struct {
 		name       string
 		fields     []models.Metrics
@@ -133,19 +135,29 @@ func TestMetricsStorage_GetMetric(t *testing.T) {
 		wantValue  string
 	}{
 		{
-			name: "get existing metric",
+			name: "get existing gauge metric",
 			fields: []models.Metrics{
-				{ID: "DiskUsage", MType: "gauge", Value: &val, Delta: &delta},
+				{ID: "DiskUsage", MType: "gauge", Value: &valGauge, Delta: &delta},
 			},
 			metricType: "gauge",
 			metricName: "DiskUsage",
 			wantErr:    false,
-			wantValue:  "50.000000",
+			wantValue:  "50.5",
+		},
+		{
+			name: "get existing counter metric (integer output)",
+			fields: []models.Metrics{
+				{ID: "Requests", MType: "counter", Value: &valCounter, Delta: &delta},
+			},
+			metricType: "counter",
+			metricName: "Requests",
+			wantErr:    false,
+			wantValue:  "10",
 		},
 		{
 			name: "metric not found",
 			fields: []models.Metrics{
-				{ID: "CPU", MType: "gauge", Value: &val},
+				{ID: "CPU", MType: "gauge", Value: &valGauge},
 			},
 			metricType: "gauge",
 			metricName: "Memory",

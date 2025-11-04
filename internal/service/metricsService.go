@@ -23,17 +23,26 @@ func (m *MetricsStorage) GetMetric(metricType string, metricName string) (value 
 	if err := checkMetricType(metricType); err != nil {
 		return "", err
 	}
+
 	for i := range m.Metrics {
 		if m.Metrics[i].ID == metricName {
-			convertedMetricValue := fmt.Sprintf("%g", *m.Metrics[i].Value)
-			return convertedMetricValue, nil
+			if m.Metrics[i].Value == nil {
+				return "", errors.New("metric value is nil")
+			}
+			switch metricType {
+			case "counter":
+				intVal := int64(*m.Metrics[i].Value)
+				return fmt.Sprintf("%d", intVal), nil
+			case "gauge":
+				return strconv.FormatFloat(*m.Metrics[i].Value, 'f', -1, 64), nil
+			default:
+				return "", errors.New("unsupported metric type")
+			}
 		}
-
 	}
 
 	return "", errors.New("metric not found")
 }
-
 func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricValue string) error {
 	if err := checkMetricType(metricType); err != nil {
 		return err

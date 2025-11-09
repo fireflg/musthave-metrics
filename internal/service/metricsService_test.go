@@ -96,25 +96,27 @@ func TestMetricsStorage_SetMetric(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &MetricsStorage{
-				Metrics: tt.fields.Metrics,
+			metricsMap := make(map[string]models.Metrics)
+			for _, f := range tt.fields.Metrics {
+				metricsMap[f.ID] = f
 			}
+
+			m := &MetricsStorage{
+				Metrics: metricsMap,
+			}
+
 			if err := m.SetMetric(tt.args.metricType, tt.args.metricName, tt.args.metricValue); (err != nil) != tt.wantErr {
 				t.Errorf("SetMetric() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if !tt.wantErr {
-				found := false
-				for _, met := range m.Metrics {
-					if met.ID == tt.args.metricName {
-						found = true
-						if met.Value == nil {
-							t.Errorf("metric %s Value is nil", met.ID)
-						}
-					}
-				}
-				if !found {
+				met, ok := m.Metrics[tt.args.metricName]
+				if !ok {
 					t.Errorf("metric %s not added", tt.args.metricName)
+					return
+				}
+				if met.Value == nil {
+					t.Errorf("metric %s Value is nil", met.ID)
 				}
 			}
 		})
@@ -124,7 +126,7 @@ func TestMetricsStorage_SetMetric(t *testing.T) {
 func TestMetricsStorage_GetMetric(t *testing.T) {
 	valGauge := 50.5
 	valCounter := 10.0
-	delta := int64(0)
+	delta := int64(10)
 
 	tests := []struct {
 		name       string
@@ -174,12 +176,19 @@ func TestMetricsStorage_GetMetric(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &MetricsStorage{
-				Metrics: tt.fields,
+			metricsMap := make(map[string]models.Metrics)
+			for _, f := range tt.fields {
+				metricsMap[f.ID] = f
 			}
+
+			m := &MetricsStorage{
+				Metrics: metricsMap,
+			}
+
 			got, err := m.GetMetric(tt.metricType, tt.metricName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetMetric() error = %v, wantErr %v", err, tt.wantErr)
+				return
 			}
 			if !tt.wantErr && got != tt.wantValue {
 				t.Errorf("GetMetric() = %v, want %v", got, tt.wantValue)

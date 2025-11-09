@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/agent"
@@ -33,15 +34,12 @@ func main() {
 	fmt.Println("Report metrics interval", flagReportInterval)
 
 	client := http.Client{
-		Transport:     nil,
-		CheckRedirect: nil,
-		Jar:           nil,
-		Timeout:       5 * time.Second,
+		Timeout: 5 * time.Second,
 	}
 
 	if !strings.Contains(flagRunAddr, "http://") {
 		flagRunAddr = "http://" + flagRunAddr
 	}
 	agentService := agent.NewAgentService(client, flagRunAddr, flagPoolInterval, flagReportInterval)
-	agentService.Start()
+	agentService.Start(context.Background())
 }

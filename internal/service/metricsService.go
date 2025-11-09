@@ -6,6 +6,7 @@ import (
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	"log"
 	"strconv"
+	"sync"
 )
 
 type MetricsService interface {
@@ -14,7 +15,8 @@ type MetricsService interface {
 }
 
 type MetricsStorage struct {
-	Metrics []models.Metrics
+	Metrics map[string]models.Metrics
+	Mutex   sync.Mutex
 }
 
 var _ MetricsService = (*MetricsStorage)(nil)
@@ -24,27 +26,30 @@ func (m *MetricsStorage) GetMetric(metricType string, metricName string) (value 
 		return "", err
 	}
 
-	for i := range m.Metrics {
-		if m.Metrics[i].ID == metricName {
-			if m.Metrics[i].Value == nil {
-				return "", errors.New("metric value is nil")
-			}
-			switch metricType {
-			case "counter":
-				intVal := int64(*m.Metrics[i].Value)
-				return fmt.Sprintf("%d", intVal), nil
-			case "gauge":
-				return strconv.FormatFloat(*m.Metrics[i].Value, 'f', -1, 64), nil
-			default:
-				return "", errors.New("unsupported metric type")
-			}
-		}
+	metric, exists := m.Metrics[metricName]
+	if !exists {
+		return "", errors.New("metric not found")
 	}
 
-	return "", errors.New("metric not found")
+	if metric.Value == nil {
+		return "", errors.New("metric value is nil")
+	}
+
+	switch metricType {
+	case "counter":
+		intVal := int64(*metric.Value)
+		return fmt.Sprintf("%d", intVal), nil
+	case "gauge":
+		return strconv.FormatFloat(*metric.Value, 'f', -1, 64), nil
+	default:
+		return "", errors.New("unsupported metric type")
+	}
 }
 
 func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricValue string) error {
+	m.Mutex.Lock()
+	defer m.Mutex.Unlock()
+
 	if err := checkMetricType(metricType); err != nil {
 		return err
 	}
@@ -54,44 +59,33 @@ func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricV
 		return errors.New("only numbers allowed")
 	}
 
-	for i := range m.Metrics {
-		if m.Metrics[i].ID == metricName {
-			switch metricType {
-			case "counter":
-				if m.Metrics[i].Value == nil {
-					m.Metrics[i].Value = new(float64)
-				}
-				*m.Metrics[i].Value += convertedMetricValue
-				delta := int64(*m.Metrics[i].Value)
-				m.Metrics[i].Delta = &delta
-
-			case "gauge":
-				m.Metrics[i].Value = &convertedMetricValue
-			}
-			log.Printf("set metric %s", metricName)
-			return nil
+	metric, exists := m.Metrics[metricName]
+	if !exists {
+		metric = models.Metrics{
+			ID:    metricName,
+			MType: metricType,
 		}
 	}
 
 	switch metricType {
 	case "counter":
-		val := convertedMetricValue
-		delta := int64(val)
-		m.Metrics = append(m.Metrics, models.Metrics{
-			ID:    metricName,
-			MType: metricType,
-			Value: &val,
-			Delta: &delta,
-		})
+		var delta int64
+		if metric.Delta != nil {
+			delta = *metric.Delta
+		}
+		delta += int64(convertedMetricValue)
+		val := float64(delta)
+		metric.Value = &val
+		metric.Delta = &delta
+
 	case "gauge":
-		m.Metrics = append(m.Metrics, models.Metrics{
-			ID:    metricName,
-			MType: metricType,
-			Value: &convertedMetricValue,
-			Delta: new(int64),
-		})
+		metric.Value = &convertedMetricValue
+		metric.Delta = nil
 	}
 
+	m.Metrics[metricName] = metric
+
+	log.Printf("set metric %s", metricName)
 	return nil
 }
 
@@ -104,6 +98,6 @@ func checkMetricType(metricType string) error {
 
 func NewMetricsService() *MetricsStorage {
 	return &MetricsStorage{
-		Metrics: make([]models.Metrics, 0),
+		Metrics: make(map[string]models.Metrics),
 	}
 }

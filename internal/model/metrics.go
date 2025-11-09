@@ -10,6 +10,10 @@ const (
 // Delta и Value объявлены через указатели,
 // что бы отличать значение "0", от не заданного значения
 // и соответственно не кодировать в структуру.
+//
+//	type Metrics struct {
+//		ID string `json:"id"`
+//	}
 type Metrics struct {
 	ID    string   `json:"id"`
 	MType string   `json:"type"`

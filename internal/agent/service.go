@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
+	"reflect"
 	"runtime"
 	"strings"
 	"time"
@@ -25,7 +27,7 @@ type AgentConfig struct {
 	Metrics        Metrics
 }
 
-func (c *AgentConfig) Start() {
+func (c *AgentConfig) Start(ctx context.Context) {
 	pollTicker := time.NewTicker(c.PollInterval)
 	reportTicker := time.NewTicker(c.ReportInterval)
 	defer pollTicker.Stop()
@@ -43,6 +45,9 @@ func (c *AgentConfig) Start() {
 		case <-reportTicker.C:
 			log.Printf("send metrics")
 			c.ReportMetrics()
+		case <-ctx.Done():
+			log.Printf("agent stopped")
+			return
 		}
 	}
 }
@@ -68,7 +73,7 @@ func (c *AgentConfig) ReportMetrics() {
 			continue
 		}
 
-		defer resp.Body.Close()
+		resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			log.Printf("failed to report metrics: %d\n", resp.StatusCode)
@@ -79,34 +84,31 @@ func (c *AgentConfig) ReportMetrics() {
 }
 
 func (c *AgentConfig) UpdateMetrics(memStats runtime.MemStats) Metrics {
-	return Metrics{
-		"Alloc":         float64(memStats.Alloc),
-		"BuckHashSys":   float64(memStats.BuckHashSys),
-		"Frees":         float64(memStats.Frees),
-		"GCCPUFraction": memStats.GCCPUFraction,
-		"HeapAlloc":     float64(memStats.HeapAlloc),
-		"HeapIdle":      float64(memStats.HeapIdle),
-		"HeapInuse":     float64(memStats.HeapInuse),
-		"HeapReleased":  float64(memStats.HeapReleased),
-		"HeapObjects":   float64(memStats.HeapObjects),
-		"HeapSys":       float64(memStats.HeapSys),
-		"LastGC":        float64(memStats.LastGC),
-		"Lookups":       float64(memStats.Lookups),
-		"MCacheInuse":   float64(memStats.MCacheInuse),
-		"MCacheSys":     float64(memStats.MCacheSys),
-		"MSpanInuse":    float64(memStats.MSpanInuse),
-		"Mallocs":       float64(memStats.Mallocs),
-		"NextGC":        float64(memStats.NextGC),
-		"NumForcedGC":   float64(memStats.NumForcedGC),
-		"NumGC":         float64(memStats.NumGC),
-		"OtherSys":      float64(memStats.OtherSys),
-		"PauseTotalNs":  float64(memStats.PauseTotalNs),
-		"StackInuse":    float64(memStats.StackInuse),
-		"Sys":           float64(memStats.Sys),
-		"TotalAlloc":    float64(memStats.TotalAlloc),
-		"RandomValue":   rand.ExpFloat64(),
-		"PollCount":     c.Metrics["PollCount"] + 1,
+	metrics := Metrics{}
+
+	v := reflect.ValueOf(memStats)
+	for _, name := range memStatFields {
+		field := v.FieldByName(name)
+		if field.IsValid() {
+			switch field.Kind() {
+			case reflect.Uint64:
+				metrics[name] = float64(field.Uint())
+			case reflect.Float64:
+				metrics[name] = field.Float()
+			case reflect.Int64:
+				metrics[name] = float64(field.Int())
+			default:
+				metrics[name] = 0.0
+			}
+		} else {
+			metrics[name] = 0.0
+		}
 	}
+
+	metrics["RandomValue"] = rand.ExpFloat64()
+	metrics["PollCount"] = c.Metrics["PollCount"] + 1
+
+	return metrics
 }
 
 func NewAgentService(client http.Client, serverBaseURL string, poolInterval int, reportInterval int) *AgentConfig {

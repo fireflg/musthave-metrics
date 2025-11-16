@@ -36,7 +36,7 @@ func parseAgentParams() {
 		flagReportInterval = reportInterval
 	}
 	if os.Getenv("POOL_INTERVAL") == "" {
-		flag.IntVar(&flagReportInterval, "r", 10, "report metrics interval")
+		flag.IntVar(&flagPoolInterval, "p", 2, "pool metrics interval")
 	} else {
 		poolInterval, err := strconv.Atoi(poolInterval)
 		if err != nil {
@@ -48,8 +48,8 @@ func parseAgentParams() {
 			fmt.Fprintf(os.Stderr, "unknown flag(s): %v\n", unknownFlag)
 			os.Exit(2)
 		}
-		flag.Parse()
 	}
+	flag.Parse()
 }
 
 func main() {

@@ -14,8 +14,7 @@ import (
 var flagRunAddr string
 
 func parseServerParams() {
-	var address string
-	address = os.Getenv("ADDRESS")
+	address := os.Getenv("ADDRESS")
 	if address == "" {
 		flag.StringVar(&flagRunAddr, "a", ":8080", "address and port to run server")
 	} else {

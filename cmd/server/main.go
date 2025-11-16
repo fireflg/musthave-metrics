@@ -13,8 +13,14 @@ import (
 
 var flagRunAddr string
 
-func parseFlags() {
-	flag.StringVar(&flagRunAddr, "a", ":8080", "address and port to run server")
+func parseServerParams() {
+	var address string
+	address = os.Getenv("ADDRESS")
+	if address == "" {
+		flag.StringVar(&flagRunAddr, "a", ":8080", "address and port to run server")
+	} else {
+		flagRunAddr = address
+	}
 	if unknownFlag := flag.Args(); len(unknownFlag) > 0 {
 		fmt.Fprintf(os.Stderr, "unknown flag(s): %v\n", unknownFlag)
 		os.Exit(2)
@@ -32,7 +38,7 @@ func ServerRouter() chi.Router {
 }
 
 func main() {
-	parseFlags()
+	parseServerParams()
 	r := ServerRouter()
 	fmt.Println("Running server on", flagRunAddr)
 	log.Fatal(http.ListenAndServe(flagRunAddr, r))

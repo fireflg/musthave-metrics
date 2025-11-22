@@ -6,6 +6,7 @@ import (
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 	"log"
 	"net/http"
 	"os"
@@ -27,9 +28,10 @@ func parseServerParams() {
 	flag.Parse()
 }
 
-func ServerRouter() chi.Router {
+func ServerRouter(logger *zap.SugaredLogger) chi.Router {
 	r := chi.NewRouter()
 	metricsService := service.NewMetricsService()
+	r.Use(handler.WithLogging(logger))
 	metricsHandler := handler.NewMetricsHandler(metricsService)
 	r.Get("/value/{metricType}/{metricName}", metricsHandler.GetMetric)
 	r.Post("/update/{metricType}/{metricName}/{metricValue}", metricsHandler.UpdateMetric)
@@ -37,8 +39,15 @@ func ServerRouter() chi.Router {
 }
 
 func main() {
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
+
+	sugar := logger.Sugar()
 	parseServerParams()
-	r := ServerRouter()
-	fmt.Println("Running server on", flagRunAddr)
+	r := ServerRouter(sugar)
+	sugar.Infof("Running server on %s", flagRunAddr)
 	log.Fatal(http.ListenAndServe(flagRunAddr, r))
 }

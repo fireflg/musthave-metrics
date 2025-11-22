@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"go.uber.org/zap"
 	"log"
 	"math/rand"
 	"net/http"
@@ -27,26 +28,26 @@ type AgentConfig struct {
 	Metrics        Metrics
 }
 
-func (c *AgentConfig) Start(ctx context.Context) {
+func (c *AgentConfig) Start(ctx context.Context, logger *zap.SugaredLogger) {
 	pollTicker := time.NewTicker(c.PollInterval)
 	reportTicker := time.NewTicker(c.ReportInterval)
 	defer pollTicker.Stop()
 	defer reportTicker.Stop()
 
-	log.Printf("agent started: poll=%v, report=%v", c.PollInterval, c.ReportInterval)
+	logger.Infof("agent started: poll=%v, report=%v", c.PollInterval, c.ReportInterval)
 
 	for {
 		select {
 		case <-pollTicker.C:
-			log.Printf("poll metrics")
+			logger.Infof("poll metrics")
 			metrics := c.PollMetrics()
 			c.Metrics = c.UpdateMetrics(metrics)
 
 		case <-reportTicker.C:
-			log.Printf("send metrics")
+			logger.Infof("send metrics")
 			c.ReportMetrics()
 		case <-ctx.Done():
-			log.Printf("agent stopped")
+			logger.Infof("agent stopped")
 			return
 		}
 	}

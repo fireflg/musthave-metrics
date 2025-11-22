@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/agent"
+	"go.uber.org/zap"
 	"net/http"
 	"os"
 	"strconv"
@@ -55,9 +56,17 @@ func parseAgentParams() {
 func main() {
 	parseAgentParams()
 
-	fmt.Println("Send metrics to server", flagRunAddr)
-	fmt.Println("Pool metrics interval", flagPoolInterval)
-	fmt.Println("Report metrics interval", flagReportInterval)
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
+
+	sugar := logger.Sugar()
+
+	sugar.Infof("Send metrics to server %s", flagRunAddr)
+	sugar.Infof("Pool metrics interval %d", flagPoolInterval)
+	sugar.Infof("Report metrics interval %d", flagReportInterval)
 
 	client := http.Client{
 		Timeout: 5 * time.Second,
@@ -67,5 +76,5 @@ func main() {
 		flagRunAddr = "http://" + flagRunAddr
 	}
 	agentService := agent.NewAgentService(client, flagRunAddr, flagPoolInterval, flagReportInterval)
-	agentService.Start(context.Background())
+	agentService.Start(context.Background(), sugar)
 }

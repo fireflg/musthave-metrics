@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"go.uber.org/zap"
 	"log"
@@ -9,18 +11,17 @@ import (
 	"net/http"
 	"reflect"
 	"runtime"
-	"strings"
 	"time"
 )
 
-type AgentService interface {
+type Service interface {
 	Start()
 	UpdateMetrics(memStats runtime.MemStats) Metrics
 	PollMetrics() runtime.MemStats
 	ReportMetrics()
 }
 
-type AgentConfig struct {
+type Config struct {
 	ServerURL      string
 	HTTPClient     http.Client
 	PollInterval   time.Duration
@@ -28,7 +29,7 @@ type AgentConfig struct {
 	Metrics        Metrics
 }
 
-func (c *AgentConfig) Start(ctx context.Context, logger *zap.SugaredLogger) {
+func (c *Config) Start(ctx context.Context, logger *zap.SugaredLogger) {
 	pollTicker := time.NewTicker(c.PollInterval)
 	reportTicker := time.NewTicker(c.ReportInterval)
 	defer pollTicker.Stop()
@@ -53,38 +54,72 @@ func (c *AgentConfig) Start(ctx context.Context, logger *zap.SugaredLogger) {
 	}
 }
 
-func (c *AgentConfig) PollMetrics() runtime.MemStats {
+func (c *Config) PollMetrics() runtime.MemStats {
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 	return memStats
 }
 
-func (c *AgentConfig) ReportMetrics() {
+func (c *Config) ReportMetrics() {
 	for metric, value := range c.Metrics {
 		metricType := "gauge"
 		if metric == "PollCount" {
 			metricType = "counter"
 		}
-		lowercaseMetric := strings.ToLower(metric)
-		url := fmt.Sprintf("%s/update/%s/%s/%v", c.ServerURL, metricType, lowercaseMetric, value)
-		log.Printf("make request %s", url)
-		resp, err := c.HTTPClient.Post(url, "text/plain", strings.NewReader(""))
+
+		url := fmt.Sprintf("%s/update/", c.ServerURL)
+
+		var payload []byte
+		var err error
+		if metricType == "counter" {
+			delta := int64(value)
+			payload, err = json.Marshal(map[string]interface{}{
+				"id":    metric,
+				"delta": delta,
+				"type":  metricType,
+			})
+		} else {
+			payload, err = json.Marshal(map[string]interface{}{
+				"id":    metric,
+				"value": value,
+				"type":  metricType,
+			})
+		}
 		if err != nil {
-			log.Printf("error reporting metrics: %v\n", err)
+			log.Printf("marshal error: %v", err)
 			continue
 		}
 
-		resp.Body.Close()
+		const maxRetries = 5
+		backoff := 100 * time.Millisecond
 
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("failed to report metrics: %d\n", resp.StatusCode)
-		} else {
-			log.Printf("successfully sent metric %s", lowercaseMetric)
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			resp, err := c.HTTPClient.Post(url, "application/json", bytes.NewReader(payload))
+			if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+				log.Printf("successfully sent %s", metric)
+				resp.Body.Close()
+				break
+			}
+
+			if err != nil {
+				log.Printf("send error (attempt %d/%d): %v", attempt, maxRetries, err)
+			} else {
+				log.Printf("bad status %d (attempt %d/%d) for metric %s", resp.StatusCode, attempt, maxRetries, metric)
+				resp.Body.Close()
+			}
+
+			if attempt == maxRetries {
+				log.Printf("failed to send %s after %d attempts", metric, maxRetries)
+				break
+			}
+
+			time.Sleep(backoff)
+			backoff *= 2
 		}
 	}
 }
 
-func (c *AgentConfig) UpdateMetrics(memStats runtime.MemStats) Metrics {
+func (c *Config) UpdateMetrics(memStats runtime.MemStats) Metrics {
 	metrics := Metrics{}
 
 	v := reflect.ValueOf(memStats)
@@ -108,12 +143,13 @@ func (c *AgentConfig) UpdateMetrics(memStats runtime.MemStats) Metrics {
 
 	metrics["RandomValue"] = rand.ExpFloat64()
 	metrics["PollCount"] = c.Metrics["PollCount"] + 1
+	c.Metrics["PollCount"] = metrics["PollCount"]
 
 	return metrics
 }
 
-func NewAgentService(client http.Client, serverBaseURL string, poolInterval int, reportInterval int) *AgentConfig {
-	return &AgentConfig{
+func NewAgentService(client http.Client, serverBaseURL string, poolInterval int, reportInterval int) *Config {
+	return &Config{
 		ServerURL:      serverBaseURL,
 		HTTPClient:     client,
 		PollInterval:   time.Second * time.Duration(poolInterval),

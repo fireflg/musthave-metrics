@@ -8,7 +8,7 @@ import (
 )
 
 func TestAgentConfig_PollMetrics(t *testing.T) {
-	c := &AgentConfig{}
+	c := &Config{}
 	got := c.PollMetrics()
 
 	if got.Alloc == 0 && got.Sys == 0 {
@@ -17,7 +17,7 @@ func TestAgentConfig_PollMetrics(t *testing.T) {
 }
 
 func TestAgentConfig_UpdateMetrics(t *testing.T) {
-	c := &AgentConfig{Metrics: Metrics{"PollCount": 3}}
+	c := &Config{Metrics: Metrics{"PollCount": 3}}
 
 	memStats := runtime.MemStats{
 		Alloc:     123,

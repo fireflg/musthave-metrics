@@ -14,5 +14,6 @@ var memStatFields = []string{
 	"HeapObjects", "HeapSys", "LastGC", "Lookups",
 	"MCacheInuse", "MCacheSys", "MSpanInuse", "Mallocs",
 	"NextGC", "NumForcedGC", "NumGC", "OtherSys",
-	"PauseTotalNs", "StackInuse", "Sys", "TotalAlloc",
+	"PauseTotalNs", "StackInuse", "StackSys", "MSpanSys", "Sys", "TotalAlloc",
+	"GCSys",
 }

@@ -31,10 +31,20 @@ func parseServerParams() {
 func ServerRouter(logger *zap.SugaredLogger) chi.Router {
 	r := chi.NewRouter()
 	metricsService := service.NewMetricsService()
+
 	r.Use(handler.WithLogging(logger))
+
+	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pong"))
+	})
+
 	metricsHandler := handler.NewMetricsHandler(metricsService)
 	r.Get("/value/{metricType}/{metricName}", metricsHandler.GetMetric)
 	r.Post("/update/{metricType}/{metricName}/{metricValue}", metricsHandler.UpdateMetric)
+	r.Post("/update/", metricsHandler.UpdateMetricJSON)
+	r.Post("/value/", metricsHandler.GetMetricJSON)
+
 	return r
 }
 

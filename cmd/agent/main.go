@@ -21,11 +21,13 @@ func parseAgentParams() {
 	address := os.Getenv("ADDRESS")
 	reportInterval := os.Getenv("REPORT_INTERVAL")
 	poolInterval := os.Getenv("POOL_INTERVAL")
+
 	if address == "" {
 		flag.StringVar(&flagRunAddr, "a", "http://localhost:8080", "address and port to run server")
 	} else {
 		flagRunAddr = address
 	}
+
 	if reportInterval == "" {
 		flag.IntVar(&flagReportInterval, "r", 10, "report metrics interval")
 	} else {
@@ -36,6 +38,7 @@ func parseAgentParams() {
 		}
 		flagReportInterval = reportInterval
 	}
+
 	if os.Getenv("POOL_INTERVAL") == "" {
 		flag.IntVar(&flagPoolInterval, "p", 2, "pool metrics interval")
 	} else {
@@ -45,28 +48,30 @@ func parseAgentParams() {
 			os.Exit(1)
 		}
 		flagPoolInterval = poolInterval
-		if unknownFlag := flag.Args(); len(unknownFlag) > 0 {
-			fmt.Fprintf(os.Stderr, "unknown flag(s): %v\n", unknownFlag)
-			os.Exit(2)
-		}
 	}
+
+	if unknownFlag := flag.Args(); len(unknownFlag) > 0 {
+		fmt.Fprintf(os.Stderr, "unknown flag(s): %v\n", unknownFlag)
+		os.Exit(2)
+	}
+
 	flag.Parse()
 }
 
 func main() {
 	parseAgentParams()
-
 	logger, err := zap.NewDevelopment()
 	if err != nil {
 		panic(err)
 	}
 	defer logger.Sync()
-
 	sugar := logger.Sugar()
 
 	sugar.Infof("Send metrics to server %s", flagRunAddr)
-	sugar.Infof("Pool metrics interval %d", flagPoolInterval)
-	sugar.Infof("Report metrics interval %d", flagReportInterval)
+	sugar.Infow("Agent configuration",
+		"poolInterval", flagPoolInterval,
+		"reportInterval", flagReportInterval,
+	)
 
 	client := http.Client{
 		Timeout: 5 * time.Second,
@@ -75,6 +80,8 @@ func main() {
 	if !strings.Contains(flagRunAddr, "http://") {
 		flagRunAddr = "http://" + flagRunAddr
 	}
+
 	agentService := agent.NewAgentService(client, flagRunAddr, flagPoolInterval, flagReportInterval)
+	time.Sleep(2 * time.Second)
 	agentService.Start(context.Background(), sugar)
 }

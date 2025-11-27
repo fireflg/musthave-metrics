@@ -6,6 +6,7 @@ import (
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 	"log"
 	"net/http"
 	"os"
@@ -13,8 +14,13 @@ import (
 
 var flagRunAddr string
 
-func parseFlags() {
-	flag.StringVar(&flagRunAddr, "a", ":8080", "address and port to run server")
+func parseServerParams() {
+	address := os.Getenv("ADDRESS")
+	if address == "" {
+		flag.StringVar(&flagRunAddr, "a", ":8080", "address and port to run server")
+	} else {
+		flagRunAddr = address
+	}
 	if unknownFlag := flag.Args(); len(unknownFlag) > 0 {
 		fmt.Fprintf(os.Stderr, "unknown flag(s): %v\n", unknownFlag)
 		os.Exit(2)
@@ -22,18 +28,36 @@ func parseFlags() {
 	flag.Parse()
 }
 
-func ServerRouter() chi.Router {
+func ServerRouter(logger *zap.SugaredLogger) chi.Router {
 	r := chi.NewRouter()
 	metricsService := service.NewMetricsService()
+
+	r.Use(handler.WithLogging(logger))
+
+	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pong"))
+	})
+
 	metricsHandler := handler.NewMetricsHandler(metricsService)
 	r.Get("/value/{metricType}/{metricName}", metricsHandler.GetMetric)
 	r.Post("/update/{metricType}/{metricName}/{metricValue}", metricsHandler.UpdateMetric)
+	r.Post("/update/", metricsHandler.UpdateMetricJSON)
+	r.Post("/value/", metricsHandler.GetMetricJSON)
+
 	return r
 }
 
 func main() {
-	parseFlags()
-	r := ServerRouter()
-	fmt.Println("Running server on", flagRunAddr)
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
+
+	sugar := logger.Sugar()
+	parseServerParams()
+	r := ServerRouter(sugar)
+	sugar.Infof("Running server on %s", flagRunAddr)
 	log.Fatal(http.ListenAndServe(flagRunAddr, r))
 }

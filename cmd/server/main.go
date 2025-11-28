@@ -40,11 +40,11 @@ func ServerRouter(logger *zap.SugaredLogger) chi.Router {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("pong"))
 	})
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/", middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("<br>hi<br>"))
-	})
+	}))
 	metricsHandler := handler.NewMetricsHandler(metricsService)
 	r.Get("/value/{metricType}/{metricName}", metricsHandler.GetMetric)
 	r.Post("/update/{metricType}/{metricName}/{metricValue}", metricsHandler.UpdateMetric)

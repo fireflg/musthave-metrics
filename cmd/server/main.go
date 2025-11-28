@@ -41,8 +41,9 @@ func ServerRouter(logger *zap.SugaredLogger) chi.Router {
 		w.Write([]byte("pong"))
 	})
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("hi"))
+		w.Write([]byte("<br>hi<br>"))
 	})
 	metricsHandler := handler.NewMetricsHandler(metricsService)
 	r.Get("/value/{metricType}/{metricName}", metricsHandler.GetMetric)

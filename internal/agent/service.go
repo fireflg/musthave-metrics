@@ -99,8 +99,8 @@ func (a *Agent) PollData() runtime.MemStats {
 }
 
 func (a *Agent) Report(metric string, payload []byte) error {
-	const maxRetries = 5
-	backoff := 100 * time.Millisecond
+	const maxRetries = 10
+	backoff := 200 * time.Millisecond
 	url := fmt.Sprintf("%s/update/", a.cfg.ServerURL)
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {

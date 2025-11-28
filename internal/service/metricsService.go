@@ -1,11 +1,18 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
+	"time"
+
+	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 )
 
 type MetricsService interface {
@@ -155,4 +162,120 @@ func NewMetricsService() *MetricsStorage {
 	return &MetricsStorage{
 		Metrics: make(map[string]models.Metrics),
 	}
+}
+
+func (m *MetricsStorage) RestoreMetrics(filePath string) error {
+	m.Mutex.Lock()
+	defer m.Mutex.Unlock()
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("RestoreMetrics: file not found %s, skipping restore", filePath)
+			return nil
+		}
+		return fmt.Errorf("RestoreMetrics: read file: %w", err)
+	}
+
+	var metricsArray []models.Metrics
+	if err := json.Unmarshal(data, &metricsArray); err != nil {
+		return fmt.Errorf("RestoreMetrics: json unmarshal: %w", err)
+	}
+
+	m.Metrics = make(map[string]models.Metrics, len(metricsArray))
+	for _, metric := range metricsArray {
+		m.Metrics[metric.ID] = metric
+	}
+	log.Printf("RestoreMetrics: restored %d metrics from %s", len(metricsArray), filePath)
+	return nil
+}
+
+func (m *MetricsStorage) SaveMetrics(ctx context.Context, filePath string, storeInterval int) error {
+	if storeInterval < 0 {
+		return fmt.Errorf("storeInterval must be >= 0, got %d", storeInterval)
+	}
+
+	if storeInterval == 0 {
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				if err := m.saveOnce(filePath); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	storeTicker := time.NewTicker(time.Duration(storeInterval) * time.Second)
+	defer storeTicker.Stop()
+
+	for {
+		select {
+		case <-storeTicker.C:
+			if err := m.saveOnce(filePath); err != nil {
+				return err
+			}
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (m *MetricsStorage) saveOnce(filePath string) error {
+	m.Mutex.Lock()
+
+	metricsSlice := make([]map[string]interface{}, 0, len(m.Metrics))
+	for _, metric := range m.Metrics {
+		item := map[string]interface{}{
+			"id":   metric.ID,
+			"type": metric.MType,
+		}
+
+		switch metric.MType {
+		case "counter":
+			item["delta"] = metric.Delta
+		case "gauge":
+			item["value"] = metric.Value
+		}
+		metricsSlice = append(metricsSlice, item)
+	}
+
+	data, err := json.MarshalIndent(metricsSlice, "", "  ")
+	m.Mutex.Unlock()
+	if err != nil {
+		return fmt.Errorf("json marshal failed: %w", err)
+	}
+
+	if err := m.saveMetricsToFile(filePath, data); err != nil {
+		return fmt.Errorf("write failed: %w", err)
+	}
+
+	return nil
+}
+
+func (m *MetricsStorage) saveMetricsToFile(filePath string, data []byte) error {
+	if filePath == "" {
+		return fmt.Errorf("filePath is empty")
+	}
+
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	fd, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+	defer fd.Close()
+
+	_, err = fd.Write(data)
+	if err != nil {
+		return fmt.Errorf("failed to write file %s: %w", filePath, err)
+	}
+
+	return nil
 }

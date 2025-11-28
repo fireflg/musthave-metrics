@@ -3,13 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
-	"github.com/go-chi/chi/v5"
-	"go.uber.org/zap"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 )
 
 var flagRunAddr string
@@ -32,7 +34,7 @@ func ServerRouter(logger *zap.SugaredLogger) chi.Router {
 	r := chi.NewRouter()
 	metricsService := service.NewMetricsService()
 
-	r.Use(handler.WithLogging(logger))
+	r.Use(middleware.WithLogging(logger))
 
 	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -42,8 +44,8 @@ func ServerRouter(logger *zap.SugaredLogger) chi.Router {
 	metricsHandler := handler.NewMetricsHandler(metricsService)
 	r.Get("/value/{metricType}/{metricName}", metricsHandler.GetMetric)
 	r.Post("/update/{metricType}/{metricName}/{metricValue}", metricsHandler.UpdateMetric)
-	r.Post("/update/", metricsHandler.UpdateMetricJSON)
-	r.Post("/value/", metricsHandler.GetMetricJSON)
+	r.Post("/update/", middleware.GzipMiddleware(metricsHandler.UpdateMetricJSON))
+	r.Post("/value/", middleware.GzipMiddleware(metricsHandler.GetMetricJSON))
 
 	return r
 }

@@ -2,158 +2,214 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
-	"log"
 	"math/rand"
 	"net/http"
 	"reflect"
 	"runtime"
 	"time"
+
+	"go.uber.org/zap"
 )
 
-type Service interface {
-	Start()
-	UpdateMetrics(memStats runtime.MemStats) Metrics
-	PollMetrics() runtime.MemStats
-	ReportMetrics()
+type Metrics map[string]float64
+
+type Agent struct {
+	cfg     *Config
+	metrics Metrics
 }
+
+type AgentService interface {
+	Start(ctx context.Context)
+	PollData() runtime.MemStats
+	Report(metric string, payload []byte) error
+	MakePayload(metric string, value float64) ([]byte, error)
+	UpdateData(memStats runtime.MemStats)
+	CompressPayload(payload []byte) ([]byte, error)
+}
+
+var _ AgentService = (*Agent)(nil)
 
 type Config struct {
 	ServerURL      string
 	HTTPClient     http.Client
 	PollInterval   time.Duration
 	ReportInterval time.Duration
-	Metrics        Metrics
+	Logger         *zap.SugaredLogger
 }
 
-func (c *Config) Start(ctx context.Context, logger *zap.SugaredLogger) {
-	pollTicker := time.NewTicker(c.PollInterval)
-	reportTicker := time.NewTicker(c.ReportInterval)
+func NewAgent(cfg *Config) AgentService {
+	if cfg.Logger == nil {
+		l, _ := zap.NewProduction()
+		cfg.Logger = l.Sugar()
+	}
+	return &Agent{
+		cfg:     cfg,
+		metrics: Metrics{},
+	}
+}
+
+func (a *Agent) Start(ctx context.Context) {
+	pollTicker := time.NewTicker(a.cfg.PollInterval)
+	reportTicker := time.NewTicker(a.cfg.ReportInterval)
 	defer pollTicker.Stop()
 	defer reportTicker.Stop()
 
-	logger.Infof("agent started: poll=%v, report=%v", c.PollInterval, c.ReportInterval)
+	a.cfg.Logger.Infof("agent started")
 
 	for {
 		select {
 		case <-pollTicker.C:
-			logger.Infof("poll metrics")
-			metrics := c.PollMetrics()
-			c.Metrics = c.UpdateMetrics(metrics)
+			a.UpdateData(a.PollData())
 
 		case <-reportTicker.C:
-			logger.Infof("send metrics")
-			c.ReportMetrics()
+			for metric, value := range a.metrics {
+				payload, err := a.MakePayload(metric, value)
+				if err != nil {
+					a.cfg.Logger.Warnw("failed to make payload", "metric", metric, "value", value, "error", err)
+					continue
+				}
+
+				compressedPayload, err := a.CompressPayload(payload)
+				if err != nil {
+					a.cfg.Logger.Warnw("failed to compress payload", "metric", metric, "value", value, "error", err)
+					continue
+				}
+
+				err = a.Report(metric, compressedPayload)
+				if err != nil {
+					a.cfg.Logger.Warnw("failed to report metric", "metric", metric, "value", value, "error", err)
+				}
+			}
+
 		case <-ctx.Done():
-			logger.Infof("agent stopped")
+			a.cfg.Logger.Infof("agent stopped")
 			return
 		}
 	}
 }
 
-func (c *Config) PollMetrics() runtime.MemStats {
+func (a *Agent) PollData() runtime.MemStats {
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 	return memStats
 }
 
-func (c *Config) ReportMetrics() {
-	for metric, value := range c.Metrics {
-		metricType := "gauge"
-		if metric == "PollCount" {
-			metricType = "counter"
-		}
+func (a *Agent) Report(metric string, payload []byte) error {
+	const maxRetries = 5
+	backoff := 100 * time.Millisecond
+	url := fmt.Sprintf("%s/update/", a.cfg.ServerURL)
 
-		url := fmt.Sprintf("%s/update/", c.ServerURL)
-
-		var payload []byte
-		var err error
-		if metricType == "counter" {
-			delta := int64(value)
-			payload, err = json.Marshal(map[string]interface{}{
-				"id":    metric,
-				"delta": delta,
-				"type":  metricType,
-			})
-		} else {
-			payload, err = json.Marshal(map[string]interface{}{
-				"id":    metric,
-				"value": value,
-				"type":  metricType,
-			})
-		}
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 		if err != nil {
-			log.Printf("marshal error: %v", err)
+			a.cfg.Logger.Warnw("failed to create request", "metric", metric, "attempt", attempt, "error", err)
 			continue
 		}
 
-		const maxRetries = 5
-		backoff := 100 * time.Millisecond
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
 
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			resp, err := c.HTTPClient.Post(url, "application/json", bytes.NewReader(payload))
-			if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
-				log.Printf("successfully sent %s", metric)
-				resp.Body.Close()
-				break
-			}
-
-			if err != nil {
-				log.Printf("send error (attempt %d/%d): %v", attempt, maxRetries, err)
-			} else {
-				log.Printf("bad status %d (attempt %d/%d) for metric %s", resp.StatusCode, attempt, maxRetries, metric)
-				resp.Body.Close()
-			}
-
-			if attempt == maxRetries {
-				log.Printf("failed to send %s after %d attempts", metric, maxRetries)
-				break
-			}
-
-			time.Sleep(backoff)
-			backoff *= 2
+		resp, err := a.cfg.HTTPClient.Do(req)
+		if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+			a.cfg.Logger.Infof("successfully sent metric %s", metric)
+			resp.Body.Close()
+			break
 		}
+
+		if err != nil {
+			a.cfg.Logger.Warnw("send error", "metric", metric, "attempt", attempt, "error", err)
+		} else {
+			a.cfg.Logger.Warnw("bad status", "metric", metric, "attempt", attempt, "status", resp.StatusCode)
+			resp.Body.Close()
+		}
+
+		if attempt == maxRetries {
+			a.cfg.Logger.Errorw("failed to send metric after retries", "metric", metric, "attempts", maxRetries)
+			break
+		}
+
+		time.Sleep(backoff)
+		backoff *= 2
 	}
+
+	return nil
 }
 
-func (c *Config) UpdateMetrics(memStats runtime.MemStats) Metrics {
-	metrics := Metrics{}
+func (a *Agent) MakePayload(metric string, value float64) ([]byte, error) {
+	metricType := "gauge"
+	if metric == "PollCount" {
+		metricType = "counter"
+	}
 
+	var payload []byte
+	var err error
+
+	if metricType == "counter" {
+		payload, err = json.Marshal(map[string]interface{}{
+			"id":    metric,
+			"delta": int64(value),
+			"type":  metricType,
+		})
+	} else {
+		payload, err = json.Marshal(map[string]interface{}{
+			"id":    metric,
+			"value": value,
+			"type":  metricType,
+		})
+	}
+
+	if err != nil {
+		a.cfg.Logger.Warnw("failed to marshal payload", "metric", metric, "error", err)
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (a *Agent) UpdateData(memStats runtime.MemStats) {
 	v := reflect.ValueOf(memStats)
+
 	for _, name := range memStatFields {
 		field := v.FieldByName(name)
 		if field.IsValid() {
 			switch field.Kind() {
 			case reflect.Uint64:
-				metrics[name] = float64(field.Uint())
+				a.metrics[name] = float64(field.Uint())
 			case reflect.Float64:
-				metrics[name] = field.Float()
+				a.metrics[name] = field.Float()
 			case reflect.Int64:
-				metrics[name] = float64(field.Int())
+				a.metrics[name] = float64(field.Int())
 			default:
-				metrics[name] = 0.0
+				a.metrics[name] = 0
 			}
-		} else {
-			metrics[name] = 0.0
+			continue
 		}
+		a.metrics[name] = 0
 	}
 
-	metrics["RandomValue"] = rand.ExpFloat64()
-	metrics["PollCount"] = c.Metrics["PollCount"] + 1
-	c.Metrics["PollCount"] = metrics["PollCount"]
-
-	return metrics
+	a.metrics["RandomValue"] = rand.ExpFloat64()
+	a.metrics["PollCount"]++
 }
 
-func NewAgentService(client http.Client, serverBaseURL string, poolInterval int, reportInterval int) *Config {
-	return &Config{
-		ServerURL:      serverBaseURL,
-		HTTPClient:     client,
-		PollInterval:   time.Second * time.Duration(poolInterval),
-		ReportInterval: time.Second * time.Duration(reportInterval),
-		Metrics:        Metrics{},
+func (a *Agent) CompressPayload(payload []byte) ([]byte, error) {
+	var compressedBuf bytes.Buffer
+
+	gzipWriter := gzip.NewWriter(&compressedBuf)
+
+	_, err := gzipWriter.Write(payload)
+
+	if err != nil {
+		a.cfg.Logger.Warnw("failed to write compressed payload", "error", err)
+		return nil, err
 	}
+
+	if err = gzipWriter.Close(); err != nil {
+		a.cfg.Logger.Warnw("failed to close gzip writer", "error", err)
+		return nil, err
+	}
+
+	return compressedBuf.Bytes(), nil
 }

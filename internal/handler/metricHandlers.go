@@ -1,15 +1,13 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
-	"github.com/go-chi/chi/v5"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strconv"
-	"time"
+
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	"github.com/go-chi/chi/v5"
 )
 
 type MetricsHandler struct {
@@ -104,42 +102,4 @@ func (h *MetricsHandler) GetMetricJSON(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write(resp)
-}
-
-func WithLogging(logger *zap.SugaredLogger) func(http.Handler) http.Handler {
-	return func(h http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			start := time.Now()
-
-			lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-
-			var bodyBytes []byte
-			if r.Body != nil && (r.Method == http.MethodPost || r.Method == http.MethodPut) {
-				bodyBytes, _ = io.ReadAll(r.Body)
-				r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-			}
-
-			h.ServeHTTP(lrw, r)
-
-			duration := time.Since(start)
-
-			logger.Infoln(
-				"method", r.Method,
-				"uri", r.RequestURI,
-				"status", lrw.statusCode,
-				"duration", duration,
-				"body", string(bodyBytes),
-			)
-		})
-	}
-}
-
-type loggingResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (lrw *loggingResponseWriter) WriteHeader(code int) {
-	lrw.statusCode = code
-	lrw.ResponseWriter.WriteHeader(code)
 }

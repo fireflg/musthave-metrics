@@ -1,60 +1,90 @@
 package agent
 
 import (
-	"net/http"
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"reflect"
 	"runtime"
 	"testing"
-	"time"
 )
 
-func TestAgentConfig_PollMetrics(t *testing.T) {
-	c := &AgentConfig{}
-	got := c.PollMetrics()
-
-	if got.Alloc == 0 && got.Sys == 0 {
-		t.Errorf("PollMetrics() returned empty stats: %+v", got)
+func TestAgent_PollData(t *testing.T) {
+	agent := NewAgent(&Config{}).(*Agent)
+	stats := agent.PollData()
+	if stats.Alloc == 0 && stats.Sys == 0 {
+		t.Errorf("PollData returned empty stats")
 	}
 }
 
-func TestAgentConfig_UpdateMetrics(t *testing.T) {
-	c := &AgentConfig{Metrics: Metrics{"PollCount": 3}}
+func TestAgent_UpdateData(t *testing.T) {
+	agent := NewAgent(&Config{}).(*Agent)
+	agent.metrics["PollCount"] = 5
 
 	memStats := runtime.MemStats{
-		Alloc:     123,
-		HeapAlloc: 456,
+		Alloc:     100,
+		HeapAlloc: 200,
 	}
+	agent.UpdateData(memStats)
 
-	got := c.UpdateMetrics(memStats)
-
-	if got["Alloc"] != 123 {
-		t.Errorf("Alloc = %v, want 123", got["Alloc"])
+	if agent.metrics["Alloc"] != 100 {
+		t.Errorf("Alloc = %v, want 100", agent.metrics["Alloc"])
 	}
-	if got["HeapAlloc"] != 456 {
-		t.Errorf("HeapAlloc = %v, want 456", got["HeapAlloc"])
+	if agent.metrics["HeapAlloc"] != 200 {
+		t.Errorf("HeapAlloc = %v, want 200", agent.metrics["HeapAlloc"])
 	}
-	if got["PollCount"] != 4 {
-		t.Errorf("PollCount = %v, want 4", got["PollCount"])
+	if agent.metrics["PollCount"] != 6 {
+		t.Errorf("PollCount = %v, want 6", agent.metrics["PollCount"])
 	}
-	if _, ok := got["RandomValue"]; !ok {
+	if _, ok := agent.metrics["RandomValue"]; !ok {
 		t.Errorf("RandomValue key missing")
 	}
 }
 
-func TestNewAgentService(t *testing.T) {
-	client := http.Client{}
-	url := "http://127.0.0.1:8080"
-	got := NewAgentService(client, url, 2, 10)
+func TestAgent_MakePayload(t *testing.T) {
+	agent := NewAgent(&Config{}).(*Agent)
 
-	if got.ServerURL != url {
-		t.Errorf("ServerUrl = %v, want %v", got.ServerURL, url)
+	data, err := agent.MakePayload("Alloc", 123)
+	if err != nil {
+		t.Fatalf("MakePayload failed: %v", err)
 	}
-	if got.PollInterval != 2*time.Second {
-		t.Errorf("PollInterval = %v, want 2s", got.PollInterval)
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
 	}
-	if got.ReportInterval != 10*time.Second {
-		t.Errorf("ReportInterval = %v, want 10s", got.ReportInterval)
+
+	expected := map[string]interface{}{"id": "Alloc", "value": 123.0, "type": "gauge"}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("got %v, want %v", result, expected)
 	}
-	if got.Metrics == nil {
-		t.Errorf("Metrics map is nil")
+
+	data, _ = agent.MakePayload("PollCount", 10)
+	json.Unmarshal(data, &result)
+	if result["type"] != "counter" || result["delta"].(float64) != 10 {
+		t.Errorf("counter payload incorrect: %v", result)
+	}
+}
+
+func TestAgent_CompressPayload(t *testing.T) {
+	agent := NewAgent(&Config{}).(*Agent)
+	payload := []byte(`{"id":"test","value":42}`)
+
+	compressed, err := agent.CompressPayload(payload)
+	if err != nil {
+		t.Fatalf("CompressPayload failed: %v", err)
+	}
+
+	r, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatalf("gzip.NewReader failed: %v", err)
+	}
+	defer r.Close()
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+
+	if !bytes.Equal(buf.Bytes(), payload) {
+		t.Errorf("decompressed mismatch, got %s, want %s", buf.Bytes(), payload)
 	}
 }

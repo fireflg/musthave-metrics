@@ -1,6 +1,10 @@
 package service
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
@@ -15,82 +19,55 @@ func TestMetricsStorage_SetMetric(t *testing.T) {
 		metricName  string
 		metricValue string
 	}
+
 	tests := []struct {
 		name    string
 		fields  fields
 		args    args
 		wantErr bool
+		wantVal string
 	}{
 		{
-			name: "valid gauge metric - new entry",
-			fields: fields{
-				Metrics: []models.Metrics{},
-			},
-			args: args{
-				metricType:  "gauge",
-				metricName:  "CPUUsage",
-				metricValue: "42.5",
-			},
+			name:    "valid gauge metric - new entry",
+			fields:  fields{Metrics: []models.Metrics{}},
+			args:    args{metricType: "gauge", metricName: "CPUUsage", metricValue: "42.5"},
 			wantErr: false,
+			wantVal: "42.5",
 		},
 		{
-			name: "valid counter metric - new entry",
-			fields: fields{
-				Metrics: []models.Metrics{},
-			},
-			args: args{
-				metricType:  "counter",
-				metricName:  "Requests",
-				metricValue: "100",
-			},
+			name:    "valid counter metric - new entry",
+			fields:  fields{Metrics: []models.Metrics{}},
+			args:    args{metricType: "counter", metricName: "Requests", metricValue: "100"},
 			wantErr: false,
+			wantVal: "100",
 		},
 		{
-			name: "invalid metric type",
-			fields: fields{
-				Metrics: []models.Metrics{},
-			},
-			args: args{
-				metricType:  "unknown",
-				metricName:  "BadMetric",
-				metricValue: "5",
-			},
+			name:    "invalid metric type",
+			fields:  fields{Metrics: []models.Metrics{}},
+			args:    args{metricType: "unknown", metricName: "BadMetric", metricValue: "5"},
 			wantErr: true,
 		},
 		{
-			name: "invalid metric value (not number)",
+			name: "update existing gauge metric",
 			fields: fields{
-				Metrics: []models.Metrics{},
+				Metrics: []models.Metrics{
+					{ID: "Memory", MType: "gauge", Value: float64Ptr(10.0)},
+				},
 			},
-			args: args{
-				metricType:  "gauge",
-				metricName:  "CPU",
-				metricValue: "notanumber",
-			},
-			wantErr: true,
+			args:    args{metricType: "gauge", metricName: "Memory", metricValue: "20"},
+			wantErr: false,
+			wantVal: "20",
 		},
 		{
-			name: "update existing metric",
+			name: "update existing counter metric",
 			fields: fields{
-				Metrics: func() []models.Metrics {
-					val := 10.0
-					delta := int64(0)
-					return []models.Metrics{
-						{
-							ID:    "Memory",
-							MType: "gauge",
-							Value: &val,
-							Delta: &delta,
-						},
-					}
-				}(),
+				Metrics: []models.Metrics{
+					{ID: "Requests", MType: "counter", Value: float64Ptr(5.0), Delta: int64Ptr(5)},
+				},
 			},
-			args: args{
-				metricType:  "gauge",
-				metricName:  "Memory",
-				metricValue: "20",
-			},
+			args:    args{metricType: "counter", metricName: "Requests", metricValue: "7"},
 			wantErr: false,
+			wantVal: "12",
 		},
 	}
 
@@ -100,23 +77,25 @@ func TestMetricsStorage_SetMetric(t *testing.T) {
 			for _, f := range tt.fields.Metrics {
 				metricsMap[f.ID] = f
 			}
+			m := &MetricsStorage{Metrics: metricsMap}
 
-			m := &MetricsStorage{
-				Metrics: metricsMap,
+			val, err := strconv.ParseFloat(tt.args.metricValue, 64)
+			if err != nil && !tt.wantErr {
+				t.Fatalf("cannot parse metricValue: %v", err)
 			}
-
-			if err := m.SetMetric(tt.args.metricType, tt.args.metricName, tt.args.metricValue); (err != nil) != tt.wantErr {
+			err = m.SetMetric(tt.args.metricType, tt.args.metricName, val)
+			if (err != nil) != tt.wantErr {
 				t.Errorf("SetMetric() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if !tt.wantErr {
-				met, ok := m.Metrics[tt.args.metricName]
-				if !ok {
-					t.Errorf("metric %s not added", tt.args.metricName)
-					return
-				}
+				met := m.Metrics[tt.args.metricName]
 				if met.Value == nil {
-					t.Errorf("metric %s Value is nil", met.ID)
+					t.Fatalf("metric.Value == nil")
+				}
+				got := strconv.FormatFloat(*met.Value, 'f', -1, 64)
+				if got != tt.wantVal {
+					t.Errorf("value = %v, want %v", got, tt.wantVal)
 				}
 			}
 		})
@@ -134,32 +113,32 @@ func TestMetricsStorage_GetMetric(t *testing.T) {
 		metricType string
 		metricName string
 		wantErr    bool
-		wantValue  string
+		wantValue  float64
 	}{
 		{
 			name: "get existing gauge metric",
 			fields: []models.Metrics{
-				{ID: "DiskUsage", MType: "gauge", Value: &valGauge, Delta: &delta},
+				{ID: "DiskUsage", MType: "gauge", Value: float64Ptr(valGauge)},
 			},
 			metricType: "gauge",
 			metricName: "DiskUsage",
 			wantErr:    false,
-			wantValue:  "50.5",
+			wantValue:  50.5,
 		},
 		{
-			name: "get existing counter metric (integer output)",
+			name: "get existing counter metric",
 			fields: []models.Metrics{
-				{ID: "Requests", MType: "counter", Value: &valCounter, Delta: &delta},
+				{ID: "Requests", MType: "counter", Value: float64Ptr(valCounter), Delta: &delta},
 			},
 			metricType: "counter",
 			metricName: "Requests",
 			wantErr:    false,
-			wantValue:  "10",
+			wantValue:  10,
 		},
 		{
 			name: "metric not found",
 			fields: []models.Metrics{
-				{ID: "CPU", MType: "gauge", Value: &valGauge},
+				{ID: "CPU", MType: "gauge", Value: float64Ptr(valGauge)},
 			},
 			metricType: "gauge",
 			metricName: "Memory",
@@ -173,17 +152,13 @@ func TestMetricsStorage_GetMetric(t *testing.T) {
 			wantErr:    true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metricsMap := make(map[string]models.Metrics)
 			for _, f := range tt.fields {
 				metricsMap[f.ID] = f
 			}
-
-			m := &MetricsStorage{
-				Metrics: metricsMap,
-			}
+			m := &MetricsStorage{Metrics: metricsMap}
 
 			got, err := m.GetMetric(tt.metricType, tt.metricName)
 			if (err != nil) != tt.wantErr {
@@ -196,3 +171,33 @@ func TestMetricsStorage_GetMetric(t *testing.T) {
 		})
 	}
 }
+
+func TestMetricsStorage_DecodeAndSetMetric(t *testing.T) {
+	m := &MetricsStorage{Metrics: make(map[string]models.Metrics)}
+
+	body := `{
+        "id": "CPU",
+        "type": "gauge",
+        "value": 55.5
+    }`
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
+
+	err := m.DecodeAndSetMetric(req)
+	if err != nil {
+		t.Fatalf("DecodeAndSetMetric() error = %v", err)
+	}
+
+	metric, ok := m.Metrics["CPU"]
+	if !ok {
+		t.Fatalf("metric CPU not stored")
+	}
+	if metric.Value == nil || *metric.Value != 55.5 {
+		t.Fatalf("expected value 55.5, got %v", metric.Value)
+	}
+	if metric.MType != "gauge" {
+		t.Fatalf("expected type gauge, got %s", metric.MType)
+	}
+}
+
+func float64Ptr(v float64) *float64 { return &v }
+func int64Ptr(v int64) *int64       { return &v }

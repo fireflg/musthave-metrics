@@ -6,7 +6,6 @@ type Intervals struct {
 	PollInterval   time.Duration
 	ReportInterval time.Duration
 }
-type Metrics map[string]float64
 
 var memStatFields = []string{
 	"Alloc", "BuckHashSys", "Frees", "GCCPUFraction",
@@ -14,5 +13,6 @@ var memStatFields = []string{
 	"HeapObjects", "HeapSys", "LastGC", "Lookups",
 	"MCacheInuse", "MCacheSys", "MSpanInuse", "Mallocs",
 	"NextGC", "NumForcedGC", "NumGC", "OtherSys",
-	"PauseTotalNs", "StackInuse", "Sys", "TotalAlloc",
+	"PauseTotalNs", "StackInuse", "StackSys", "MSpanSys", "Sys", "TotalAlloc",
+	"GCSys",
 }

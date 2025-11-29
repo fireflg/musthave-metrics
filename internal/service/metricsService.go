@@ -1,17 +1,25 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	"log"
-	"strconv"
+	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
+	"time"
+
+	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 )
 
 type MetricsService interface {
-	SetMetric(metricType string, metricName string, value string) error
-	GetMetric(metricType string, metricName string) (value string, err error)
+	SetMetric(metricType string, metricName string, metricValue float64) error
+	GetMetric(metricType string, metricName string) (value float64, err error)
+	DecodeAndSetMetric(r *http.Request) error
+	DecodeAndGetMetric(r *http.Request) ([]byte, error)
 }
 
 type MetricsStorage struct {
@@ -21,42 +29,12 @@ type MetricsStorage struct {
 
 var _ MetricsService = (*MetricsStorage)(nil)
 
-func (m *MetricsStorage) GetMetric(metricType string, metricName string) (value string, err error) {
-	if err := checkMetricType(metricType); err != nil {
-		return "", err
-	}
-
-	metric, exists := m.Metrics[metricName]
-	if !exists {
-		return "", errors.New("metric not found")
-	}
-
-	if metric.Value == nil {
-		return "", errors.New("metric value is nil")
-	}
-
-	switch metricType {
-	case "counter":
-		intVal := int64(*metric.Value)
-		return fmt.Sprintf("%d", intVal), nil
-	case "gauge":
-		return strconv.FormatFloat(*metric.Value, 'f', -1, 64), nil
-	default:
-		return "", errors.New("unsupported metric type")
-	}
-}
-
-func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricValue string) error {
+func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricValue float64) error {
 	m.Mutex.Lock()
 	defer m.Mutex.Unlock()
 
 	if err := checkMetricType(metricType); err != nil {
 		return err
-	}
-
-	convertedMetricValue, err := strconv.ParseFloat(metricValue, 64)
-	if err != nil {
-		return errors.New("only numbers allowed")
 	}
 
 	metric, exists := m.Metrics[metricName]
@@ -73,20 +51,104 @@ func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricV
 		if metric.Delta != nil {
 			delta = *metric.Delta
 		}
-		delta += int64(convertedMetricValue)
+		delta += int64(metricValue)
 		val := float64(delta)
-		metric.Value = &val
 		metric.Delta = &delta
-
+		metric.Value = &val
 	case "gauge":
-		metric.Value = &convertedMetricValue
 		metric.Delta = nil
+		metric.Value = &metricValue
 	}
 
 	m.Metrics[metricName] = metric
-
-	log.Printf("set metric %s", metricName)
 	return nil
+}
+
+func (m *MetricsStorage) GetMetric(metricType string, metricName string) (float64, error) {
+	m.Mutex.Lock()
+	defer m.Mutex.Unlock()
+
+	if err := checkMetricType(metricType); err != nil {
+		return 0, err
+	}
+
+	metric, exists := m.Metrics[metricName]
+	if !exists {
+		return 0, errors.New("metric not found")
+	}
+
+	switch metricType {
+	case "gauge":
+		if metric.Value == nil {
+			return 0, errors.New("gauge value is nil")
+		}
+		return *metric.Value, nil
+	case "counter":
+		if metric.Delta == nil {
+			return 0, errors.New("counter delta is nil")
+		}
+		return float64(*metric.Delta), nil
+	default:
+		return 0, errors.New("unknown metric type")
+	}
+}
+
+func (m *MetricsStorage) DecodeAndSetMetric(r *http.Request) error {
+	var metric models.Metrics
+	if err := json.NewDecoder(r.Body).Decode(&metric); err != nil {
+		return err
+	}
+
+	switch metric.MType {
+	case "gauge":
+		if metric.Value == nil {
+			return errors.New("value required for gauge")
+		}
+		return m.SetMetric("gauge", metric.ID, *metric.Value)
+	case "counter":
+		if metric.Delta == nil {
+			return errors.New("delta required for counter")
+		}
+		return m.SetMetric("counter", metric.ID, float64(*metric.Delta))
+	default:
+		return errors.New("unknown metric type")
+	}
+}
+
+func (m *MetricsStorage) DecodeAndGetMetric(r *http.Request) ([]byte, error) {
+	var metric models.Metrics
+	if err := json.NewDecoder(r.Body).Decode(&metric); err != nil {
+		return nil, err
+	}
+
+	m.Mutex.Lock()
+	defer m.Mutex.Unlock()
+	stored, ok := m.Metrics[metric.ID]
+	if !ok {
+		return nil, errors.New("metric not found")
+	}
+
+	resp := map[string]interface{}{
+		"id":   stored.ID,
+		"type": stored.MType,
+	}
+
+	switch stored.MType {
+	case "gauge":
+		if stored.Value == nil {
+			return nil, errors.New("gauge value is nil")
+		}
+		resp["value"] = *stored.Value
+	case "counter":
+		if stored.Delta == nil {
+			return nil, errors.New("counter delta is nil")
+		}
+		resp["delta"] = *stored.Delta
+	default:
+		return nil, errors.New("unknown metric type")
+	}
+
+	return json.Marshal(resp)
 }
 
 func checkMetricType(metricType string) error {
@@ -100,4 +162,120 @@ func NewMetricsService() *MetricsStorage {
 	return &MetricsStorage{
 		Metrics: make(map[string]models.Metrics),
 	}
+}
+
+func (m *MetricsStorage) RestoreMetrics(filePath string) error {
+	m.Mutex.Lock()
+	defer m.Mutex.Unlock()
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("RestoreMetrics: file not found %s, skipping restore", filePath)
+			return nil
+		}
+		return fmt.Errorf("RestoreMetrics: read file: %w", err)
+	}
+
+	var metricsArray []models.Metrics
+	if err := json.Unmarshal(data, &metricsArray); err != nil {
+		return fmt.Errorf("RestoreMetrics: json unmarshal: %w", err)
+	}
+
+	m.Metrics = make(map[string]models.Metrics, len(metricsArray))
+	for _, metric := range metricsArray {
+		m.Metrics[metric.ID] = metric
+	}
+	log.Printf("RestoreMetrics: restored %d metrics from %s", len(metricsArray), filePath)
+	return nil
+}
+
+func (m *MetricsStorage) SaveMetrics(ctx context.Context, filePath string, storeInterval int) error {
+	if storeInterval < 0 {
+		return fmt.Errorf("storeInterval must be >= 0, got %d", storeInterval)
+	}
+
+	if storeInterval == 0 {
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				if err := m.saveOnce(filePath); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	storeTicker := time.NewTicker(time.Duration(storeInterval) * time.Second)
+	defer storeTicker.Stop()
+
+	for {
+		select {
+		case <-storeTicker.C:
+			if err := m.saveOnce(filePath); err != nil {
+				return err
+			}
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (m *MetricsStorage) saveOnce(filePath string) error {
+	m.Mutex.Lock()
+
+	metricsSlice := make([]map[string]interface{}, 0, len(m.Metrics))
+	for _, metric := range m.Metrics {
+		item := map[string]interface{}{
+			"id":   metric.ID,
+			"type": metric.MType,
+		}
+
+		switch metric.MType {
+		case "counter":
+			item["delta"] = metric.Delta
+		case "gauge":
+			item["value"] = metric.Value
+		}
+		metricsSlice = append(metricsSlice, item)
+	}
+
+	data, err := json.MarshalIndent(metricsSlice, "", "  ")
+	m.Mutex.Unlock()
+	if err != nil {
+		return fmt.Errorf("json marshal failed: %w", err)
+	}
+
+	if err := m.saveMetricsToFile(filePath, data); err != nil {
+		return fmt.Errorf("write failed: %w", err)
+	}
+
+	return nil
+}
+
+func (m *MetricsStorage) saveMetricsToFile(filePath string, data []byte) error {
+	if filePath == "" {
+		return fmt.Errorf("filePath is empty")
+	}
+
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	fd, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", filePath, err)
+	}
+	defer fd.Close()
+
+	_, err = fd.Write(data)
+	if err != nil {
+		return fmt.Errorf("failed to write file %s: %w", filePath, err)
+	}
+
+	return nil
 }

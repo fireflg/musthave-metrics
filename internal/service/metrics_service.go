@@ -24,18 +24,19 @@ type MetricsService interface {
 
 type MetricsStorage struct {
 	Metrics map[string]models.Metrics
-	Mutex   sync.Mutex
+	mutex   sync.Mutex
 }
 
 var _ MetricsService = (*MetricsStorage)(nil)
 
 func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricValue float64) error {
-	m.Mutex.Lock()
-	defer m.Mutex.Unlock()
 
 	if err := checkMetricType(metricType); err != nil {
 		return err
 	}
+
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	metric, exists := m.Metrics[metricName]
 	if !exists {
@@ -65,12 +66,11 @@ func (m *MetricsStorage) SetMetric(metricType string, metricName string, metricV
 }
 
 func (m *MetricsStorage) GetMetric(metricType string, metricName string) (float64, error) {
-	m.Mutex.Lock()
-	defer m.Mutex.Unlock()
-
 	if err := checkMetricType(metricType); err != nil {
 		return 0, err
 	}
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 
 	metric, exists := m.Metrics[metricName]
 	if !exists {
@@ -121,8 +121,8 @@ func (m *MetricsStorage) DecodeAndGetMetric(r *http.Request) ([]byte, error) {
 		return nil, err
 	}
 
-	m.Mutex.Lock()
-	defer m.Mutex.Unlock()
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	stored, ok := m.Metrics[metric.ID]
 	if !ok {
 		return nil, errors.New("metric not found")
@@ -165,9 +165,6 @@ func NewMetricsService() *MetricsStorage {
 }
 
 func (m *MetricsStorage) RestoreMetrics(filePath string) error {
-	m.Mutex.Lock()
-	defer m.Mutex.Unlock()
-
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -183,6 +180,7 @@ func (m *MetricsStorage) RestoreMetrics(filePath string) error {
 	}
 
 	m.Metrics = make(map[string]models.Metrics, len(metricsArray))
+
 	for _, metric := range metricsArray {
 		m.Metrics[metric.ID] = metric
 	}
@@ -225,7 +223,7 @@ func (m *MetricsStorage) SaveMetrics(ctx context.Context, filePath string, store
 }
 
 func (m *MetricsStorage) saveOnce(filePath string) error {
-	m.Mutex.Lock()
+	m.mutex.Lock()
 
 	metricsSlice := make([]map[string]interface{}, 0, len(m.Metrics))
 	for _, metric := range m.Metrics {
@@ -244,7 +242,7 @@ func (m *MetricsStorage) saveOnce(filePath string) error {
 	}
 
 	data, err := json.MarshalIndent(metricsSlice, "", "  ")
-	m.Mutex.Unlock()
+	m.mutex.Unlock()
 	if err != nil {
 		return fmt.Errorf("json marshal failed: %w", err)
 	}

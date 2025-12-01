@@ -3,90 +3,37 @@ package agent
 import (
 	"flag"
 	"fmt"
-	"os"
-	"strconv"
+	"github.com/caarlos0/env"
 	"strings"
-	"time"
-
-	"go.uber.org/zap"
 )
 
-var (
-	flagRunAddr        string
-	flagReportInterval int
-	flagPoolInterval   int
-)
-
-func Init() {
-	parseAgentParams()
+type Config struct {
+	ServerURL      string `env:"ADDRESS" envDefault:"http://localhost:8080"`
+	PollInterval   int    `env:"POLL_INTERVAL" envDefault:"2"`
+	ReportInterval int    `env:"REPORT_INTERVAL" envDefault:"10"`
 }
 
-func RunAddr() string {
-	if !strings.Contains(flagRunAddr, "http://") {
-		flagRunAddr = "http://" + flagRunAddr
+func LoadAgentConfig() (*Config, error) {
+	var cfg Config
+
+	err := env.Parse(&cfg)
+
+	if err != nil {
+		return nil, err
 	}
-	return flagRunAddr
-}
+	flag.StringVar(&cfg.ServerURL, "a", cfg.ServerURL, "Server address (default: from env or 'localhost:8080')")
+	flag.IntVar(&cfg.PollInterval, "p", cfg.PollInterval, "Poll interval in seconds (default: from env or 10)")
+	flag.IntVar(&cfg.ReportInterval, "r", cfg.ReportInterval, "Report interval in seconds (default: from env or 5)")
 
-func ReportInterval() int {
-	return flagReportInterval
-}
-
-func PoolInterval() int {
-	return flagPoolInterval
-}
-
-func parseAgentParams() {
-	address := os.Getenv("ADDRESS")
-	reportInterval := os.Getenv("REPORT_INTERVAL")
-	poolInterval := os.Getenv("POOL_INTERVAL")
-
-	if address == "" {
-		flag.StringVar(&flagRunAddr, "a", "http://localhost:8080", "address and port to run server")
-	} else {
-		flagRunAddr = address
+	if cfg.ServerURL != "" && !strings.HasPrefix(cfg.ServerURL, "http") {
+		cfg.ServerURL = "http://" + cfg.ServerURL
 	}
 
-	if reportInterval == "" {
-		flag.IntVar(&flagReportInterval, "r", 10, "report metrics interval")
-	} else {
-		ri, err := strconv.Atoi(reportInterval)
-		if err != nil {
-			fmt.Println("report interval must be a number!")
-			os.Exit(1)
-		}
-		flagReportInterval = ri
-	}
-
-	if poolInterval == "" {
-		flag.IntVar(&flagPoolInterval, "p", 2, "pool metrics interval")
-	} else {
-		pi, err := strconv.Atoi(poolInterval)
-		if err != nil {
-			fmt.Println("pool interval must be a number!")
-			os.Exit(1)
-		}
-		flagPoolInterval = pi
+	if unknownFlags := flag.Args(); len(unknownFlags) > 0 {
+		return nil, fmt.Errorf("invalid flags: %v", unknownFlags)
 	}
 
 	flag.Parse()
 
-	if unknownFlag := flag.Args(); len(unknownFlag) > 0 {
-		fmt.Fprintf(os.Stderr, "unknown flag(s): %v\n", unknownFlag)
-		os.Exit(2)
-	}
-}
-
-func NewConfig() (*Config, error) {
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Config{
-		ServerURL:      RunAddr(),
-		PollInterval:   time.Duration(PoolInterval()) * time.Second,
-		ReportInterval: time.Duration(ReportInterval()) * time.Second,
-		Logger:         logger.Sugar(),
-	}, nil
+	return &cfg, nil
 }

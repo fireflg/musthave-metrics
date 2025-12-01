@@ -25,15 +25,15 @@ func LoadAgentConfig() (*Config, error) {
 	flag.IntVar(&cfg.PollInterval, "p", cfg.PollInterval, "Poll interval in seconds (default: from env or 10)")
 	flag.IntVar(&cfg.ReportInterval, "r", cfg.ReportInterval, "Report interval in seconds (default: from env or 5)")
 
-	if cfg.ServerURL != "" && !strings.HasPrefix(cfg.ServerURL, "http") {
-		cfg.ServerURL = "http://" + cfg.ServerURL
-	}
-
 	if unknownFlags := flag.Args(); len(unknownFlags) > 0 {
 		return nil, fmt.Errorf("invalid flags: %v", unknownFlags)
 	}
 
 	flag.Parse()
+
+	if cfg.ServerURL != "" && !strings.HasPrefix(cfg.ServerURL, "http") {
+		cfg.ServerURL = "http://" + cfg.ServerURL
+	}
 
 	return &cfg, nil
 }

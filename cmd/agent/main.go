@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/agent"
 	"go.uber.org/zap"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,7 +12,10 @@ import (
 )
 
 func main() {
-	l, _ := zap.NewDevelopment()
+	l, err := zap.NewDevelopment()
+	if err != nil {
+		log.Fatalf("can't initialize zap logger: %v", err)
+	}
 	logger := l.Sugar()
 	defer logger.Sync()
 

@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"log"
 	"net/http"
 	"os"
@@ -20,11 +22,13 @@ type MetricsService interface {
 	GetMetric(metricType string, metricName string) (value float64, err error)
 	DecodeAndSetMetric(r *http.Request) error
 	DecodeAndGetMetric(r *http.Request) ([]byte, error)
+	CheckDBConn() error
 }
 
 type MetricsStorage struct {
 	Metrics map[string]models.Metrics
 	mutex   sync.Mutex
+	DBDSN   string
 }
 
 var _ MetricsService = (*MetricsStorage)(nil)
@@ -158,9 +162,10 @@ func checkMetricType(metricType string) error {
 	return nil
 }
 
-func NewMetricsService() *MetricsStorage {
+func NewMetricsService(dbDSN string) *MetricsStorage {
 	return &MetricsStorage{
 		Metrics: make(map[string]models.Metrics),
+		DBDSN:   dbDSN,
 	}
 }
 
@@ -273,6 +278,23 @@ func (m *MetricsStorage) saveMetricsToFile(filePath string, data []byte) error {
 	_, err = fd.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to write file %s: %w", filePath, err)
+	}
+
+	return nil
+}
+
+func (m *MetricsStorage) CheckDBConn() error {
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Second)
+	defer cancel()
+
+	db, err := sql.Open("pgx", m.DBDSN)
+	if err != nil {
+		return fmt.Errorf("sql.Open error: %w", err)
+	}
+	defer db.Close()
+
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("ping error: %w", err)
 	}
 
 	return nil

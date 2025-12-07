@@ -5,15 +5,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net/http"
-	"os"
-	"strconv"
-
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
+	"net/http"
+	"os"
+	"strconv"
 )
 
 var (
@@ -21,6 +20,7 @@ var (
 	flagStoreInterval   int
 	flagFileStoragePath string
 	flagRestore         bool
+	flagDBDSN           string
 )
 
 func parseServerParams() {
@@ -58,6 +58,13 @@ func parseServerParams() {
 		flag.BoolVar(&flagRestore, "r", false, "restore metrics from file on server start")
 	}
 
+	dbDSN := os.Getenv("DATABASE_DSN")
+	if address != "" {
+		flagDBDSN = dbDSN
+	} else {
+		flag.StringVar(&flagDBDSN, "d", "host=localhost port=5432 dbname=mydatabase user=myuser password=mypassword", "database dsn")
+	}
+
 	flag.Parse()
 
 	if unknownFlag := flag.Args(); len(unknownFlag) > 0 {
@@ -73,13 +80,8 @@ func parseServerParams() {
 
 func ServerRouter(metricsService *service.MetricsStorage, logger *zap.SugaredLogger) chi.Router {
 	r := chi.NewRouter()
-
 	r.Use(middleware.WithLogging(logger))
 
-	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("pong"))
-	})
 	r.Get("/", middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -90,6 +92,7 @@ func ServerRouter(metricsService *service.MetricsStorage, logger *zap.SugaredLog
 	r.Post("/update/{metricType}/{metricName}/{metricValue}", metricsHandler.UpdateMetric)
 	r.Post("/update/", middleware.GzipMiddleware(metricsHandler.UpdateMetricJSON))
 	r.Post("/value/", middleware.GzipMiddleware(metricsHandler.GetMetricJSON))
+	r.Get("/ping", metricsHandler.CheckDB)
 
 	return r
 }
@@ -106,7 +109,7 @@ func main() {
 	sugar.Infof("Server parameters: addr=%s, storage=%s, restore=%v, interval=%d",
 		flagRunAddr, flagFileStoragePath, flagRestore, flagStoreInterval)
 
-	metricsService := service.NewMetricsService()
+	metricsService := service.NewMetricsService(flagDBDSN)
 
 	if flagRestore {
 		if err := metricsService.RestoreMetrics(flagFileStoragePath); err != nil {

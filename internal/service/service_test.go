@@ -1,203 +1,121 @@
 package service
 
 import (
-	"bytes"
-	"net/http"
-	"net/http/httptest"
-	"strconv"
-	"testing"
-
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	"go.uber.org/zap"
+	"os"
+	"path/filepath"
+	"testing"
 )
 
-func TestMetricsStorage_SetMetric(t *testing.T) {
-	type fields struct {
-		Metrics []models.Metrics
-	}
-	type args struct {
-		metricType  string
-		metricName  string
-		metricValue string
-	}
+func newManagerWithRealStorage(t *testing.T) (*MetricManagerImpl, *Storage) {
+	logger, _ := zap.NewDevelopment()
+	sugar := logger.Sugar()
 
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-		wantVal string
-	}{
-		{
-			name:    "valid gauge metric - new entry",
-			fields:  fields{Metrics: []models.Metrics{}},
-			args:    args{metricType: "gauge", metricName: "CPUUsage", metricValue: "42.5"},
-			wantErr: false,
-			wantVal: "42.5",
-		},
-		{
-			name:    "valid counter metric - new entry",
-			fields:  fields{Metrics: []models.Metrics{}},
-			args:    args{metricType: "counter", metricName: "Requests", metricValue: "100"},
-			wantErr: false,
-			wantVal: "100",
-		},
-		{
-			name:    "invalid metric type",
-			fields:  fields{Metrics: []models.Metrics{}},
-			args:    args{metricType: "unknown", metricName: "BadMetric", metricValue: "5"},
-			wantErr: true,
-		},
-		{
-			name: "update existing gauge metric",
-			fields: fields{
-				Metrics: []models.Metrics{
-					{ID: "Memory", MType: "gauge", Value: float64Ptr(10.0)},
-				},
-			},
-			args:    args{metricType: "gauge", metricName: "Memory", metricValue: "20"},
-			wantErr: false,
-			wantVal: "20",
-		},
-		{
-			name: "update existing counter metric",
-			fields: fields{
-				Metrics: []models.Metrics{
-					{ID: "Requests", MType: "counter", Value: float64Ptr(5.0), Delta: int64Ptr(5)},
-				},
-			},
-			args:    args{metricType: "counter", metricName: "Requests", metricValue: "7"},
-			wantErr: false,
-			wantVal: "12",
-		},
+	tmp := t.TempDir()
+	file := filepath.Join(tmp, "metrics.json")
+
+	st := &Storage{
+		Metrics:     make(map[string]models.Metric),
+		StoragePath: file,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			metricsMap := make(map[string]models.Metrics)
-			for _, f := range tt.fields.Metrics {
-				metricsMap[f.ID] = f
-			}
-			m := &MetricsStorage{Metrics: metricsMap}
-
-			val, err := strconv.ParseFloat(tt.args.metricValue, 64)
-			if err != nil && !tt.wantErr {
-				t.Fatalf("cannot parse metricValue: %v", err)
-			}
-			err = m.SetMetric(tt.args.metricType, tt.args.metricName, val)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetMetric() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if !tt.wantErr {
-				met := m.Metrics[tt.args.metricName]
-				if met.Value == nil {
-					t.Fatalf("metric.Value == nil")
-				}
-				got := strconv.FormatFloat(*met.Value, 'f', -1, 64)
-				if got != tt.wantVal {
-					t.Errorf("value = %v, want %v", got, tt.wantVal)
-				}
-			}
-		})
+	cfg := &Config{
+		PersistentStorageInterval: 0,
 	}
-}
 
-func TestMetricsStorage_GetMetric(t *testing.T) {
-	valGauge := 50.5
-	valCounter := 10.0
-	delta := int64(10)
-
-	tests := []struct {
-		name       string
-		fields     []models.Metrics
-		metricType string
-		metricName string
-		wantErr    bool
-		wantValue  float64
-	}{
-		{
-			name: "get existing gauge metric",
-			fields: []models.Metrics{
-				{ID: "DiskUsage", MType: "gauge", Value: float64Ptr(valGauge)},
-			},
-			metricType: "gauge",
-			metricName: "DiskUsage",
-			wantErr:    false,
-			wantValue:  50.5,
-		},
-		{
-			name: "get existing counter metric",
-			fields: []models.Metrics{
-				{ID: "Requests", MType: "counter", Value: float64Ptr(valCounter), Delta: &delta},
-			},
-			metricType: "counter",
-			metricName: "Requests",
-			wantErr:    false,
-			wantValue:  10,
-		},
-		{
-			name: "metric not found",
-			fields: []models.Metrics{
-				{ID: "CPU", MType: "gauge", Value: float64Ptr(valGauge)},
-			},
-			metricType: "gauge",
-			metricName: "Memory",
-			wantErr:    true,
-		},
-		{
-			name:       "invalid metric type",
-			fields:     []models.Metrics{},
-			metricType: "badtype",
-			metricName: "Any",
-			wantErr:    true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			metricsMap := make(map[string]models.Metrics)
-			for _, f := range tt.fields {
-				metricsMap[f.ID] = f
-			}
-			m := &MetricsStorage{Metrics: metricsMap}
-
-			got, err := m.GetMetric(tt.metricType, tt.metricName)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetMetric() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && got != tt.wantValue {
-				t.Errorf("GetMetric() = %v, want %v", got, tt.wantValue)
-			}
-		})
-	}
-}
-
-func TestMetricsStorage_DecodeAndSetMetric(t *testing.T) {
-	m := &MetricsStorage{Metrics: make(map[string]models.Metrics)}
-
-	body := `{
-        "id": "CPU",
-        "type": "gauge",
-        "value": 55.5
-    }`
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
-
-	err := m.DecodeAndSetMetric(req)
+	m, err := NewMertricsManager(cfg, sugar, st)
 	if err != nil {
-		t.Fatalf("DecodeAndSetMetric() error = %v", err)
+		t.Fatalf("cannot create manager: %v", err)
 	}
 
-	metric, ok := m.Metrics["CPU"]
-	if !ok {
-		t.Fatalf("metric CPU not stored")
+	return m, st
+}
+
+func TestSetMetric_Gauge(t *testing.T) {
+	m, st := newManagerWithRealStorage(t)
+
+	err := m.SetMetric("gauge", "Alloc", 12.34)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if metric.Value == nil || *metric.Value != 55.5 {
-		t.Fatalf("expected value 55.5, got %v", metric.Value)
+
+	val, err := st.GetGaugeMetricValue("Alloc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if metric.MType != "gauge" {
-		t.Fatalf("expected type gauge, got %s", metric.MType)
+	if val != 12.34 {
+		t.Fatalf("expected 12.34, got %f", val)
+	}
+
+	// проверяем, что store файл реально создался
+	_, err = os.Stat(st.StoragePath)
+	if err != nil {
+		t.Fatalf("StoreMetrics did not write file: %v", err)
 	}
 }
 
-func float64Ptr(v float64) *float64 { return &v }
-func int64Ptr(v int64) *int64       { return &v }
+func TestSetMetric_Counter(t *testing.T) {
+	m, st := newManagerWithRealStorage(t)
+
+	err := m.SetMetric("counter", "Requests", 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	val, err := st.GetCounterMetricValue("Requests")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != 5 {
+		t.Fatalf("expected 5, got %f", val)
+	}
+}
+
+func TestSetMetric_UnknownType(t *testing.T) {
+	m, _ := newManagerWithRealStorage(t)
+
+	err := m.SetMetric("unknown", "X", 10)
+	if err == nil {
+		t.Fatal("expected error for unknown metric type")
+	}
+}
+
+func TestGetMetric_Gauge(t *testing.T) {
+	m, _ := newManagerWithRealStorage(t)
+
+	_ = m.SetMetric("gauge", "Temp", 9.99)
+
+	val, err := m.GetMetric("gauge", "Temp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if val != 9.99 {
+		t.Fatalf("expected 9.99, got %f", val)
+	}
+}
+
+func TestGetMetric_Counter(t *testing.T) {
+	m, _ := newManagerWithRealStorage(t)
+
+	_ = m.SetMetric("counter", "Hits", 3)
+
+	val, err := m.GetMetric("counter", "Hits")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if val != 3 {
+		t.Fatalf("expected 3, got %f", val)
+	}
+}
+
+func TestGetMetric_NotFound(t *testing.T) {
+	m, _ := newManagerWithRealStorage(t)
+
+	_, err := m.GetMetric("gauge", "missing")
+	if err == nil {
+		t.Fatal("expected error for missing metric")
+	}
+}

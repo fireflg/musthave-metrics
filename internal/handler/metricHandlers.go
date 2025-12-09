@@ -2,6 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
+	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strconv"
@@ -11,20 +14,43 @@ import (
 )
 
 type MetricsHandler struct {
-	service service.MetricsService
+	metricsManager service.MetricManagerImpl
+	logger         *zap.SugaredLogger
 }
 
-func NewMetricsHandler(service service.MetricsService) *MetricsHandler {
-	return &MetricsHandler{service: service}
+func (m *MetricsHandler) ServerRouter() chi.Router {
+	r := chi.NewRouter()
+	r.Use(middleware.WithLogging(m.logger))
+
+	r.Get("/", middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("<br>hi<br>"))
+	}))
+
+	r.Get("/value/{metricType}/{metricName}", m.GetMetric)
+	r.Post("/update/{metricType}/{metricName}/{metricValue}", m.UpdateMetric)
+	r.Post("/update/", middleware.GzipMiddleware(m.UpdateMetricJSON))
+	r.Post("/value/", middleware.GzipMiddleware(m.GetMetricJSON))
+	r.Get("/ping", m.CheckDB)
+
+	return r
 }
 
-func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
+func NewMetricsHandler(metricsManager service.MetricManagerImpl, logger *zap.SugaredLogger) *MetricsHandler {
+	return &MetricsHandler{metricsManager: metricsManager, logger: logger}
+}
+
+func (m *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	value, err := h.service.GetMetric(chi.URLParam(r, "metricType"), chi.URLParam(r, "metricName"))
+	metricType := chi.URLParam(r, "metricType")
+	metricName := chi.URLParam(r, "metricName")
+
+	value, err := m.metricsManager.GetMetric(metricType, metricName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -34,14 +60,10 @@ func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	strValue := strconv.FormatFloat(value, 'f', -1, 64)
-	_, err = io.WriteString(w, strValue)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	_, _ = io.WriteString(w, strValue)
 }
 
-func (h *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
+func (m *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
@@ -54,7 +76,7 @@ func (h *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.SetMetric(
+	if err := m.metricsManager.SetMetric(
 		chi.URLParam(r, "metricType"),
 		chi.URLParam(r, "metricName"),
 		metricValue,
@@ -67,44 +89,80 @@ func (h *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *MetricsHandler) UpdateMetricJSON(w http.ResponseWriter, r *http.Request) {
+func (m *MetricsHandler) UpdateMetricJSON(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Method Not Allowed"})
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method Not Allowed"})
 		return
 	}
 
-	if err := h.service.DecodeAndSetMetric(r); err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	var metricReq models.Metric
+	if err := json.NewDecoder(r.Body).Decode(&metricReq); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	switch metricReq.MType {
+	case "counter":
+		if err := m.metricsManager.SetMetric(metricReq.MType, metricReq.ID, float64(*metricReq.Delta)); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+	case "gauge":
+		if err := m.metricsManager.SetMetric(metricReq.MType, metricReq.ID, *metricReq.Value); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Unknown metric type"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *MetricsHandler) GetMetricJSON(w http.ResponseWriter, r *http.Request) {
+func (m *MetricsHandler) GetMetricJSON(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Method Not Allowed"})
 		return
 	}
 
-	resp, err := h.service.DecodeAndGetMetric(r)
+	var metricReq models.Metric
+	if err := json.NewDecoder(r.Body).Decode(&metricReq); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		return
+	}
+
+	value, err := m.metricsManager.GetMetric(metricReq.MType, metricReq.ID)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
+	resp := map[string]interface{}{
+		"id":    metricReq.ID,
+		"type":  metricReq.MType,
+		"value": value,
+	}
+
 	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
+	json.NewEncoder(w).Encode(resp)
 }
 
-func (h *MetricsHandler) CheckDB(w http.ResponseWriter, r *http.Request) {
+func writeJSON(w http.ResponseWriter, status int, data any) {
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (m *MetricsHandler) CheckDB(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -112,7 +170,7 @@ func (h *MetricsHandler) CheckDB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.CheckDBConn()
+	err := m.metricsManager.CheckDBConn()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {

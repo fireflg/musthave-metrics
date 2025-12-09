@@ -16,6 +16,10 @@ type Reporter struct {
 	client    *retryablehttp.Client
 }
 
+type MetricsReporter interface {
+	Report(ctx context.Context, metric string, value float64) error
+}
+
 func NewReporter(serverURL string) *Reporter {
 	client := retryablehttp.NewClient()
 	// Временный хардкод параметров

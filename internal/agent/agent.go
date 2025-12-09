@@ -2,29 +2,16 @@ package agent
 
 import (
 	"context"
-	"runtime"
 	"time"
 
 	"go.uber.org/zap"
 )
 
-type MetricsProvider interface {
-	Poll() runtime.MemStats
-}
-
-type MetricsReporter interface {
-	Report(ctx context.Context, metric string, value float64) error
-}
-
-type MetricsStorage interface {
-	UpdateData(memStats runtime.MemStats)
-}
-
 type Agent struct {
 	cfg      *Config
 	provider MetricsProvider
 	reporter MetricsReporter
-	Storage  MetricsStorage
+	storage  MetricsStorage
 	logger   *zap.SugaredLogger
 }
 
@@ -35,7 +22,7 @@ func NewAgent(cfg *Config, provider MetricsProvider, reporter MetricsReporter, l
 		provider: provider,
 		reporter: reporter,
 		logger:   logger,
-		Storage:  storage,
+		storage:  storage,
 	}
 }
 
@@ -52,11 +39,11 @@ func (a *Agent) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-pollTicker.C:
-			a.Storage.UpdateData(a.provider.Poll())
+			a.storage.UpdateData(a.provider.Poll())
 			a.logger.Infof("Pool metric")
 
 		case <-reportTicker.C:
-			for metric, value := range a.Storage.(Metrics) {
+			for metric, value := range a.storage.(Metrics) {
 
 				err := a.reporter.Report(ctx, metric, value)
 				if err != nil {

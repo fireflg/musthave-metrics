@@ -8,6 +8,10 @@ import (
 
 type Metrics map[string]float64
 
+type MetricsStorage interface {
+	UpdateData(memStats runtime.MemStats)
+}
+
 func (m Metrics) UpdateData(memStats runtime.MemStats) {
 	v := reflect.ValueOf(memStats)
 

@@ -59,7 +59,12 @@ func (m *MetricManagerImpl) GetMetric(metricType string, metricName string) (flo
 		"gauge":   m.storage.GetGaugeMetricValue,
 		"counter": m.storage.GetCounterMetricValue,
 	}
-	getFunc, _ := getters[metricType]
+
+	getFunc, ok := getters[metricType]
+	if !ok {
+		return 0, fmt.Errorf("unknown metric type: %s", metricType)
+	}
+
 	return getFunc(metricName)
 }
 

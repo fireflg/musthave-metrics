@@ -5,6 +5,7 @@ import (
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	"go.uber.org/zap"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -46,20 +47,22 @@ func (m *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 
 	value, err := m.metricsManager.GetMetric(metricType, metricName)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"value": value,
-	})
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+
+	strValue := strconv.FormatFloat(value, 'f', -1, 64)
+	_, _ = io.WriteString(w, strValue)
 }
 
 func (m *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 	metricValueStr := chi.URLParam(r, "metricValue")
 	metricValue, err := strconv.ParseFloat(metricValueStr, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid metric value"})
+		http.Error(w, "Invalid metric value", http.StatusBadRequest)
 		return
 	}
 
@@ -68,11 +71,12 @@ func (m *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 		chi.URLParam(r, "metricName"),
 		metricValue,
 	); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
 }
 
 func (m *MetricsHandler) UpdateMetricJSON(w http.ResponseWriter, r *http.Request) {

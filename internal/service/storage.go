@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,6 +18,7 @@ type Storage struct {
 	StorageRestore  bool
 	StoragePath     string
 	Metrics         map[string]models.Metric
+	Logger          *zap.SugaredLogger
 }
 
 type MetricsStorage interface {
@@ -121,8 +123,10 @@ func (s *Storage) UpdateCounterMetricValue(metricName string, metricValue float6
 
 func (s *Storage) InitStorage() {
 	if s.StorageRestore {
+		s.Logger.Info("starting storage restore")
 		err := s.RestoreMetrics()
 		if err != nil {
+			s.Logger.Errorf("restore failed: %v", err)
 			return
 		}
 	}
@@ -137,6 +141,7 @@ func (s *Storage) startPeriodicSave() {
 
 	for range ticker.C {
 		if err := s.StoreMetrics(); err != nil {
+			s.Logger.Errorf("metric store failed: %v", err)
 		}
 	}
 }

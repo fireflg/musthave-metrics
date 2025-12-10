@@ -33,6 +33,7 @@ func main() {
 		StorageInterval: cfg.PersistentStorageInterval,
 		StorageRestore:  cfg.PersistentStorageRestore,
 		StoragePath:     cfg.PersistentStoragePath,
+		Logger:          logger,
 	}
 
 	storage.InitStorage()

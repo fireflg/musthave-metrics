@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
 	"go.uber.org/zap"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 func main() {
@@ -28,25 +34,42 @@ func main() {
 		StorageRestore:  cfg.PersistentStorageRestore,
 		StoragePath:     cfg.PersistentStoragePath,
 	}
+
 	storage.InitStorage()
 
 	manager, err := service.NewMertricsManager(cfg, logger, storage)
 	if err != nil {
-		logger.Fatalf("Failed to initialize manager: %v", err)
+		logger.Fatal("Failed to initialize manager", zap.Error(err))
 	}
 
 	metricsHandler := handler.NewMetricsHandler(*manager, logger)
+	router := metricsHandler.ServerRouter()
 
-	r := metricsHandler.ServerRouter()
+	server := &http.Server{
+		Addr:    cfg.RunAddr,
+		Handler: router,
+	}
+
 	logger.Infof("Starting server on %s", cfg.RunAddr)
-	err = http.ListenAndServe(cfg.RunAddr, r)
-	if err != nil {
-		logger.Fatal("server failed to start",
-			zap.String("addr", cfg.RunAddr),
-			zap.Error(err),
-			zap.String("possible_causes",
-				"port in use, insufficient privileges, invalid address format"))
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Fatal("HTTP server failed", zap.Error(err))
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	logger.Info("Shutdown signal received...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Error("Graceful shutdown failed", zap.Error(err))
 	} else {
-		logger.Fatalf("server stopped unexpectedly")
+		logger.Info("Graceful shutdown complete")
 	}
 }

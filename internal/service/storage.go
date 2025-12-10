@@ -36,8 +36,11 @@ func (s *Storage) GetGaugeMetricValue(metricName string) (float64, error) {
 	metric, exists := s.Metrics[metricName]
 	if !exists {
 		return 0, errors.New("metric not found")
-	} else {
+	}
+	if s.Metrics[metricName].MType == "gauge" {
 		return *metric.Value, nil
+	} else {
+		return 0, errors.New("found metric, but wrong type")
 	}
 }
 
@@ -47,8 +50,11 @@ func (s *Storage) GetCounterMetricValue(metricName string) (float64, error) {
 	metric, exists := s.Metrics[metricName]
 	if !exists {
 		return 0, errors.New("metric not found")
-	} else {
+	}
+	if s.Metrics[metricName].MType == "counter" {
 		return float64(*metric.Delta), nil
+	} else {
+		return 0, errors.New("found metric, but wrong type")
 	}
 }
 

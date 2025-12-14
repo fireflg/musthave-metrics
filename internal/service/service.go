@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"go.uber.org/zap"
 	"time"
@@ -17,8 +18,8 @@ type MetricManagerImpl struct {
 }
 
 type MetricsManager interface {
-	SetMetric(metricType string, metricName string, metricValue float64) error
-	GetMetric(metricType string, metricName string) (float64, error)
+	SetMetric(metric models.Metric) error
+	GetMetric(metricType string, metricName string) (string, error)
 	CheckDBConn() error
 }
 
@@ -30,14 +31,14 @@ func NewMertricsManager(cfg *Config, logger *zap.SugaredLogger, storage MetricsS
 	}, nil
 }
 
-func (m *MetricManagerImpl) SetMetric(metricType string, metricName string, metricValue float64) error {
-	switch metricType {
+func (m *MetricManagerImpl) SetMetric(metric models.Metric) error {
+	switch metric.MType {
 	case "counter":
-		if err := m.storage.UpdateCounterMetricValue(metricName, metricValue); err != nil {
+		if err := m.storage.UpdateCounterMetricValue(metric.ID, *metric.Delta); err != nil {
 			return err
 		}
 	case "gauge":
-		if err := m.storage.UpdateGaugeMetricValue(metricName, metricValue); err != nil {
+		if err := m.storage.UpdateGaugeMetricValue(metric.ID, *metric.Value); err != nil {
 			return err
 		}
 	default:
@@ -54,18 +55,35 @@ func (m *MetricManagerImpl) SetMetric(metricType string, metricName string, metr
 	return nil
 }
 
-func (m *MetricManagerImpl) GetMetric(metricType string, metricName string) (float64, error) {
-	getters := map[string]func(string) (float64, error){
-		"gauge":   m.storage.GetGaugeMetricValue,
-		"counter": m.storage.GetCounterMetricValue,
-	}
+func (m *MetricManagerImpl) GetMetric(metricType, metricName string) (*models.Metric, error) {
+	switch metricType {
+	case "counter":
+		value, err := m.storage.GetCounterMetricValue(metricName)
+		if err != nil {
+			return nil, err
+		}
 
-	getFunc, ok := getters[metricType]
-	if !ok {
-		return 0, fmt.Errorf("unknown metric type: %s", metricType)
-	}
+		return &models.Metric{
+			ID:    metricName,
+			MType: "counter",
+			Delta: &value,
+		}, nil
 
-	return getFunc(metricName)
+	case "gauge":
+		value, err := m.storage.GetGaugeMetricValue(metricName)
+		if err != nil {
+			return nil, err
+		}
+
+		return &models.Metric{
+			ID:    metricName,
+			MType: "gauge",
+			Value: &value,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown metric type: %s", metricType)
+	}
 }
 
 func (m *MetricManagerImpl) CheckDBConn() error {

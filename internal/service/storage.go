@@ -24,9 +24,9 @@ type Storage struct {
 type MetricsStorage interface {
 	StoreMetrics() error
 	RestoreMetrics() error
-	UpdateCounterMetricValue(metricName string, metricValue float64) error
+	UpdateCounterMetricValue(metricName string, metricValue int64) error
 	UpdateGaugeMetricValue(metricName string, metricValue float64) error
-	GetCounterMetricValue(metricName string) (float64, error)
+	GetCounterMetricValue(metricName string) (int64, error)
 	GetGaugeMetricValue(metricName string) (float64, error)
 }
 
@@ -46,7 +46,7 @@ func (s *Storage) GetGaugeMetricValue(metricName string) (float64, error) {
 	}
 }
 
-func (s *Storage) GetCounterMetricValue(metricName string) (float64, error) {
+func (s *Storage) GetCounterMetricValue(metricName string) (int64, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	metric, exists := s.Metrics[metricName]
@@ -54,7 +54,7 @@ func (s *Storage) GetCounterMetricValue(metricName string) (float64, error) {
 		return 0, errors.New("metric not found")
 	}
 	if s.Metrics[metricName].MType == "counter" {
-		return float64(*metric.Delta), nil
+		return *metric.Delta, nil
 	} else {
 		return 0, errors.New("found metric, but wrong type")
 	}
@@ -85,7 +85,7 @@ func (s *Storage) UpdateGaugeMetricValue(metricName string, metricValue float64)
 	return nil
 }
 
-func (s *Storage) UpdateCounterMetricValue(metricName string, metricValue float64) error {
+func (s *Storage) UpdateCounterMetricValue(metricName string, metricDelta int64) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -103,24 +103,20 @@ func (s *Storage) UpdateCounterMetricValue(metricName string, metricValue float6
 		}
 	}
 
-	if metricValue != float64(int64(metricValue)) {
-		return fmt.Errorf("counter '%s' cannot accept fractional value %f",
-			metricName, metricValue)
-	}
-
 	var delta int64
 	if metric.Delta != nil {
 		delta = *metric.Delta
 	}
 
-	delta += int64(metricValue)
-
+	delta += metricDelta
 	metric.Delta = &delta
+
+	val := float64(delta)
+	metric.Value = &val
 
 	s.Metrics[metricName] = metric
 	return nil
 }
-
 func (s *Storage) InitStorage() {
 	if s.StorageRestore {
 		s.Logger.Info("starting storage restore")

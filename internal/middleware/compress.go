@@ -89,7 +89,6 @@ func GzipMiddleware(h http.HandlerFunc) http.HandlerFunc {
 			r.Body = cr
 			defer cr.Close()
 		}
-
 		h.ServeHTTP(ow, r)
 	}
 }

@@ -1,5 +1,7 @@
 package models
 
+import "context"
+
 const (
 	Counter = "counter"
 	Gauge   = "gauge"
@@ -20,4 +22,12 @@ type Metrics struct {
 	Delta *int64   `json:"delta,omitempty"`
 	Value *float64 `json:"value,omitempty"`
 	Hash  string   `json:"hash,omitempty"`
+}
+
+type MetricsRepository interface {
+	GetCounter(ctx context.Context, name string) (int64, error)
+	SetCounter(ctx context.Context, name string, value int64) error
+	GetGauge(ctx context.Context, name string) (float64, error)
+	SetGauge(ctx context.Context, name string, value float64) error
+	Ping(ctx context.Context) error
 }

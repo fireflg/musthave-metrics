@@ -30,9 +30,9 @@ func NewReporter(serverURL string) *Reporter {
 	}
 }
 
-func (r *Reporter) Report(ctx context.Context, metric string, value float64) error {
+func (r *Reporter) Report(ctx context.Context, metrics Metrics) error {
 
-	payload, err := r.makePayload(metric, value)
+	payload, err := r.makePayload(metrics)
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func (r *Reporter) Report(ctx context.Context, metric string, value float64) err
 		return err
 	}
 
-	url := fmt.Sprintf("%s/update/", r.serverURL)
+	url := fmt.Sprintf("%s/updates/", r.serverURL)
 
 	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(compressed))
 	if err != nil {
@@ -65,29 +65,29 @@ func (r *Reporter) Report(ctx context.Context, metric string, value float64) err
 	return nil
 }
 
-func (r *Reporter) makePayload(metric string, value float64) ([]byte, error) {
-	metricType := "gauge"
-	if metric == "PollCount" {
-		metricType = "counter"
+func (r *Reporter) makePayload(metrics Metrics) ([]byte, error) {
+	var payloadMap []map[string]interface{}
+	for k, v := range metrics {
+		metricType := "gauge"
+		if k == "PollCount" {
+			metricType = "counter"
+		}
+		if metricType == "counter" {
+			payloadMap = append(payloadMap, map[string]interface{}{
+				"id":    k,
+				"delta": int64(v),
+				"type":  metricType,
+			})
+		} else {
+			payloadMap = append(payloadMap, map[string]interface{}{
+				"id":    k,
+				"value": v,
+				"type":  metricType,
+			})
+		}
 	}
 
-	var payload []byte
-	var err error
-
-	if metricType == "counter" {
-		payload, err = json.Marshal(map[string]interface{}{
-			"id":    metric,
-			"delta": int64(value),
-			"type":  metricType,
-		})
-	} else {
-		payload, err = json.Marshal(map[string]interface{}{
-			"id":    metric,
-			"value": value,
-			"type":  metricType,
-		})
-	}
-
+	payload, err := json.Marshal(payloadMap)
 	if err != nil {
 		return nil, err
 	}

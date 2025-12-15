@@ -14,6 +14,7 @@ type MetricsProvider interface {
 
 type MetricsReporter interface {
 	Report(ctx context.Context, metrics Metrics) error
+	WaitServer(ctx context.Context) error
 }
 
 type MetricsStorage interface {
@@ -48,6 +49,11 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.logger.Infof("Agent started")
 	a.logger.Infof("Pool interval %v", a.cfg.PollInterval)
 	a.logger.Infof("Reporting interval %v", a.cfg.ReportInterval)
+
+	err := a.reporter.WaitServer(ctx)
+	if err != nil {
+		a.logger.Fatalf("Can't start agent! Server unreachable %v", err)
+	}
 
 	for {
 		select {

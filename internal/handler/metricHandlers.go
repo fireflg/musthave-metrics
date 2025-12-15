@@ -75,7 +75,6 @@ func (h *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 		}
 		metric.Delta = &intValue
 	}
-	fmt.Println(metric)
 	if err := h.service.SetMetric(metric); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

@@ -63,7 +63,6 @@ func (f *FileRepository) SetCounter(ctx context.Context, name string, value int6
 		return err
 	}
 	if f.storageInterval == 0 {
-		fmt.Println("govno")
 		err := f.StoreMetrics()
 		if err != nil {
 			return err
@@ -133,7 +132,7 @@ func (f *FileRepository) RestoreMetrics() error {
 		return fmt.Errorf("RestoreMetrics: read file: %w", err)
 	}
 
-	var metricsArray []models.Metrics
+	var metricsArray map[string]models.Metrics
 	if err := json.Unmarshal(data, &metricsArray); err != nil {
 		return fmt.Errorf("RestoreMetrics: unmarshal json: %w", err)
 	}

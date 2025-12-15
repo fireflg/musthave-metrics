@@ -19,8 +19,8 @@ type Reporter struct {
 func NewReporter(serverURL string) *Reporter {
 	client := retryablehttp.NewClient()
 	// Временный хардкод параметров
-	client.RetryMax = 10
-	client.RetryWaitMin = 200 * time.Millisecond
+	client.RetryMax = 15
+	client.RetryWaitMin = 500 * time.Millisecond
 	client.RetryWaitMax = 3 * time.Second
 	client.Logger = nil
 
@@ -28,6 +28,24 @@ func NewReporter(serverURL string) *Reporter {
 		serverURL: serverURL,
 		client:    client,
 	}
+}
+
+func (r *Reporter) WaitServer(ctx context.Context) error {
+	url := fmt.Sprintf("%s/", r.serverURL)
+	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+	return nil
 }
 
 func (r *Reporter) Report(ctx context.Context, metrics Metrics) error {

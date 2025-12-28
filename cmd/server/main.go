@@ -4,10 +4,8 @@ import (
 	"context"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/config/server"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
-	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 	"net/http"
 	"os"
@@ -15,26 +13,6 @@ import (
 	"syscall"
 	"time"
 )
-
-func ServerRouter(metricsService service.MetricsService, logger *zap.SugaredLogger) chi.Router {
-	r := chi.NewRouter()
-	r.Use(middleware.WithLogging(logger))
-
-	r.Get("/", middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("<br>hi<br>"))
-	}))
-	metricsHandler := handler.NewMetricsHandler(metricsService)
-	r.Get("/value/{metricType}/{metricName}", metricsHandler.GetMetric)
-	r.Post("/update/{metricType}/{metricName}/{metricValue}", metricsHandler.UpdateMetric)
-	r.Post("/update/", middleware.GzipMiddleware(metricsHandler.UpdateMetricJSON))
-	r.Post("/updates/", middleware.GzipMiddleware(metricsHandler.UpdateMetricJSONBatch))
-	r.Post("/value/", middleware.GzipMiddleware(metricsHandler.GetMetricJSON))
-	r.Get("/ping", metricsHandler.CheckDB)
-
-	return r
-}
 
 func main() {
 	logger, err := zap.NewDevelopment()
@@ -55,8 +33,8 @@ func main() {
 	}
 
 	metricsService := service.NewMetricsService(repo)
-
-	r := ServerRouter(metricsService, sugar)
+	metricsHandler := handler.NewMetricsHandler(metricsService)
+	r := metricsHandler.ServerRouter(logger.Sugar())
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -66,8 +44,10 @@ func main() {
 	defer stop()
 
 	srv := &http.Server{
-		Addr:    cfg.RunAddr,
-		Handler: r,
+		Addr:        cfg.RunAddr,
+		Handler:     r,
+		IdleTimeout: 10 * time.Second,
+		ReadTimeout: 10 * time.Second,
 	}
 
 	go func() {

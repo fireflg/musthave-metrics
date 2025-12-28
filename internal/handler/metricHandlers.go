@@ -3,7 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strconv"
@@ -14,6 +16,25 @@ import (
 
 type MetricsHandler struct {
 	service service.MetricsService
+}
+
+func (h *MetricsHandler) ServerRouter(logger *zap.SugaredLogger) chi.Router {
+	r := chi.NewRouter()
+	r.Use(middleware.WithLogging(logger))
+
+	r.Get("/", middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("<br>hi<br>"))
+	}))
+	r.Get("/value/{metricType}/{metricName}", h.GetMetric)
+	r.Post("/update/{metricType}/{metricName}/{metricValue}", h.UpdateMetric)
+	r.Post("/update/", middleware.GzipMiddleware(h.UpdateMetricJSON))
+	r.Post("/updates/", middleware.GzipMiddleware(h.UpdateMetricJSONBatch))
+	r.Post("/value/", middleware.GzipMiddleware(h.GetMetricJSON))
+	r.Get("/ping", h.CheckDB)
+
+	return r
 }
 
 func NewMetricsHandler(service service.MetricsService) *MetricsHandler {

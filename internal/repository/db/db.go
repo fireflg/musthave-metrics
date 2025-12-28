@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -93,4 +95,54 @@ func (r *PostgresRepository) SetCounter(ctx context.Context, name string, value 
 	)
 
 	return err
+}
+func (r *PostgresRepository) SetMetric(ctx context.Context, metric models.Metrics) error {
+	if metric.ID == "" {
+		return errors.New("metric ID is empty")
+	}
+
+	tx, err := r.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	switch metric.MType {
+	case "counter":
+		if metric.Delta == nil {
+			return errors.New("counter metric delta is nil")
+		}
+
+		query := `
+			INSERT INTO metrics AS m (id, type, delta)
+			VALUES ($1, 'counter', $2)
+			ON CONFLICT (id)
+			DO UPDATE SET delta = m.delta + EXCLUDED.delta
+		`
+
+		_, err = tx.ExecContext(ctx, query, metric.ID, *metric.Delta)
+
+	case "gauge":
+		if metric.Value == nil {
+			return errors.New("gauge metric value is nil")
+		}
+
+		query := `
+			INSERT INTO metrics (id, type, value)
+			VALUES ($1, 'gauge', $2)
+			ON CONFLICT (id)
+			DO UPDATE SET value = EXCLUDED.value
+		`
+
+		_, err = tx.ExecContext(ctx, query, metric.ID, *metric.Value)
+
+	default:
+		return fmt.Errorf("unknown metric type: %s", metric.MType)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

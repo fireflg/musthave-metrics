@@ -71,6 +71,13 @@ func (f *FileRepository) SetCounter(ctx context.Context, name string, value int6
 	return nil
 }
 
+func (f *FileRepository) SetMetric(ctx context.Context, metric models.Metrics) error {
+	if err := f.MemoryRepository.SetMetric(ctx, metric); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (f *FileRepository) Ping(ctx context.Context) error {
 	return f.MemoryRepository.Ping(ctx)
 }
@@ -120,6 +127,7 @@ func (f *FileRepository) StoreMetrics() error {
 }
 
 func (f *FileRepository) RestoreMetrics() error {
+	ctx := context.Background()
 	if f.storagePath == "" {
 		return nil
 	}
@@ -144,11 +152,11 @@ func (f *FileRepository) RestoreMetrics() error {
 		switch m.MType {
 		case "gauge":
 			if m.Value != nil {
-				_ = f.MemoryRepository.SetGauge(context.Background(), m.ID, *m.Value)
+				f.MemoryRepository.SetGauge(ctx, m.ID, *m.Value)
 			}
 		case "counter":
 			if m.Delta != nil {
-				_ = f.MemoryRepository.SetCounter(context.Background(), m.ID, *m.Delta)
+				f.MemoryRepository.SetCounter(ctx, m.ID, *m.Delta)
 			}
 		}
 	}

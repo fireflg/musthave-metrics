@@ -27,45 +27,18 @@ func NewMetricsService(repo models.MetricsRepository) MetricsService {
 }
 
 func (m *MetricsServiceImpl) SetMetric(metric models.Metrics) error {
-	switch metric.MType {
-	case "counter":
-		if metric.Delta == nil {
-			return fmt.Errorf("delta is required for counter")
-		}
-		return m.repo.SetCounter(context.Background(), metric.ID, *metric.Delta)
-	case "gauge":
-		if metric.Value == nil {
-			return fmt.Errorf("value is required for gauge")
-		}
-		return m.repo.SetGauge(context.Background(), metric.ID, *metric.Value)
-	default:
-		return fmt.Errorf("unknown metric type: %s", metric.MType)
+	ctx := context.Background()
+	if err := m.repo.SetMetric(ctx, metric); err != nil {
+		return err
 	}
+	return nil
 }
 
 func (m *MetricsServiceImpl) SetMetricBatch(metrics []models.Metrics) error {
 	for _, metric := range metrics {
-		switch metric.MType {
-		case "counter":
-			if metric.Delta == nil {
-				return fmt.Errorf("delta is required for counter")
-			}
-			err := m.repo.SetCounter(context.Background(), metric.ID, *metric.Delta)
-			if err != nil {
-				return err
-			}
-			continue
-		case "gauge":
-			if metric.Value == nil {
-				return fmt.Errorf("value is required for gauge")
-			}
-			err := m.repo.SetGauge(context.Background(), metric.ID, *metric.Value)
-			if err != nil {
-				return err
-			}
-			continue
-		default:
-			return fmt.Errorf("unknown metric type: %s", metric.MType)
+		ctx := context.Background()
+		if err := m.repo.SetMetric(ctx, metric); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -101,7 +74,7 @@ func (m *MetricsServiceImpl) GetMetric(metricType string, metricName string) (mo
 }
 
 func (m *MetricsServiceImpl) CheckRepository() error {
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	if err := m.repo.Ping(ctx); err != nil {
 		return err

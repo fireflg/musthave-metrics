@@ -29,5 +29,6 @@ type MetricsRepository interface {
 	SetCounter(ctx context.Context, name string, value int64) error
 	GetGauge(ctx context.Context, name string) (float64, error)
 	SetGauge(ctx context.Context, name string, value float64) error
+	SetMetric(ctx context.Context, metric Metrics) error
 	Ping(ctx context.Context) error
 }

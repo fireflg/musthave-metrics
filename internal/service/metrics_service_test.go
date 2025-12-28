@@ -1,203 +1,167 @@
-package service
+package service_test
 
 import (
-	"bytes"
-	"net/http"
-	"net/http/httptest"
-	"strconv"
+	"context"
+	"errors"
 	"testing"
 
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
-func TestMetricsStorage_SetMetric(t *testing.T) {
-	type fields struct {
-		Metrics []models.Metrics
-	}
-	type args struct {
-		metricType  string
-		metricName  string
-		metricValue string
-	}
-
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-		wantVal string
-	}{
-		{
-			name:    "valid gauge metric - new entry",
-			fields:  fields{Metrics: []models.Metrics{}},
-			args:    args{metricType: "gauge", metricName: "CPUUsage", metricValue: "42.5"},
-			wantErr: false,
-			wantVal: "42.5",
-		},
-		{
-			name:    "valid counter metric - new entry",
-			fields:  fields{Metrics: []models.Metrics{}},
-			args:    args{metricType: "counter", metricName: "Requests", metricValue: "100"},
-			wantErr: false,
-			wantVal: "100",
-		},
-		{
-			name:    "invalid metric type",
-			fields:  fields{Metrics: []models.Metrics{}},
-			args:    args{metricType: "unknown", metricName: "BadMetric", metricValue: "5"},
-			wantErr: true,
-		},
-		{
-			name: "update existing gauge metric",
-			fields: fields{
-				Metrics: []models.Metrics{
-					{ID: "Memory", MType: "gauge", Value: float64Ptr(10.0)},
-				},
-			},
-			args:    args{metricType: "gauge", metricName: "Memory", metricValue: "20"},
-			wantErr: false,
-			wantVal: "20",
-		},
-		{
-			name: "update existing counter metric",
-			fields: fields{
-				Metrics: []models.Metrics{
-					{ID: "Requests", MType: "counter", Value: float64Ptr(5.0), Delta: int64Ptr(5)},
-				},
-			},
-			args:    args{metricType: "counter", metricName: "Requests", metricValue: "7"},
-			wantErr: false,
-			wantVal: "12",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			metricsMap := make(map[string]models.Metrics)
-			for _, f := range tt.fields.Metrics {
-				metricsMap[f.ID] = f
-			}
-			m := &MetricsStorage{Metrics: metricsMap}
-
-			val, err := strconv.ParseFloat(tt.args.metricValue, 64)
-			if err != nil && !tt.wantErr {
-				t.Fatalf("cannot parse metricValue: %v", err)
-			}
-			err = m.SetMetric(tt.args.metricType, tt.args.metricName, val)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetMetric() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if !tt.wantErr {
-				met := m.Metrics[tt.args.metricName]
-				if met.Value == nil {
-					t.Fatalf("metric.Value == nil")
-				}
-				got := strconv.FormatFloat(*met.Value, 'f', -1, 64)
-				if got != tt.wantVal {
-					t.Errorf("value = %v, want %v", got, tt.wantVal)
-				}
-			}
-		})
-	}
+type MockMetricsRepo struct {
+	mock.Mock
 }
 
-func TestMetricsStorage_GetMetric(t *testing.T) {
-	valGauge := 50.5
-	valCounter := 10.0
+func (m *MockMetricsRepo) SetMetric(ctx context.Context, metric models.Metrics) error {
+	args := m.Called(ctx, metric)
+	return args.Error(0)
+}
+
+func (m *MockMetricsRepo) SetCounter(ctx context.Context, id string, delta int64) error {
+	args := m.Called(ctx, id, delta)
+	return args.Error(0)
+}
+
+func (m *MockMetricsRepo) SetGauge(ctx context.Context, id string, value float64) error {
+	args := m.Called(ctx, id, value)
+	return args.Error(0)
+}
+
+func (m *MockMetricsRepo) GetCounter(ctx context.Context, id string) (int64, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockMetricsRepo) GetGauge(ctx context.Context, id string) (float64, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(float64), args.Error(1)
+}
+
+func (m *MockMetricsRepo) Ping(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func TestSetMetric(t *testing.T) {
+	repo := new(MockMetricsRepo)
+	svc := service.NewMetricsService(repo)
+
 	delta := int64(10)
 
-	tests := []struct {
-		name       string
-		fields     []models.Metrics
-		metricType string
-		metricName string
-		wantErr    bool
-		wantValue  float64
-	}{
-		{
-			name: "get existing gauge metric",
-			fields: []models.Metrics{
-				{ID: "DiskUsage", MType: "gauge", Value: float64Ptr(valGauge)},
-			},
-			metricType: "gauge",
-			metricName: "DiskUsage",
-			wantErr:    false,
-			wantValue:  50.5,
-		},
-		{
-			name: "get existing counter metric",
-			fields: []models.Metrics{
-				{ID: "Requests", MType: "counter", Value: float64Ptr(valCounter), Delta: &delta},
-			},
-			metricType: "counter",
-			metricName: "Requests",
-			wantErr:    false,
-			wantValue:  10,
-		},
-		{
-			name: "metric not found",
-			fields: []models.Metrics{
-				{ID: "CPU", MType: "gauge", Value: float64Ptr(valGauge)},
-			},
-			metricType: "gauge",
-			metricName: "Memory",
-			wantErr:    true,
-		},
-		{
-			name:       "invalid metric type",
-			fields:     []models.Metrics{},
-			metricType: "badtype",
-			metricName: "Any",
-			wantErr:    true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			metricsMap := make(map[string]models.Metrics)
-			for _, f := range tt.fields {
-				metricsMap[f.ID] = f
-			}
-			m := &MetricsStorage{Metrics: metricsMap}
+	repo.On(
+		"SetMetric",
+		mock.Anything,
+		mock.MatchedBy(func(m models.Metrics) bool {
+			return m.ID == "counter1" &&
+				m.MType == "counter" &&
+				m.Delta != nil &&
+				*m.Delta == delta
+		}),
+	).Return(nil)
 
-			got, err := m.GetMetric(tt.metricType, tt.metricName)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetMetric() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && got != tt.wantValue {
-				t.Errorf("GetMetric() = %v, want %v", got, tt.wantValue)
-			}
-		})
-	}
+	err := svc.SetMetric(models.Metrics{
+		ID:    "counter1",
+		MType: "counter",
+		Delta: &delta,
+	})
+	assert.NoError(t, err)
+
+	value := 1.23
+
+	repo.On(
+		"SetMetric",
+		mock.Anything,
+		mock.MatchedBy(func(m models.Metrics) bool {
+			return m.ID == "gauge1" &&
+				m.MType == "gauge" &&
+				m.Value != nil &&
+				*m.Value == value
+		}),
+	).Return(nil)
+
+	err = svc.SetMetric(models.Metrics{
+		ID:    "gauge1",
+		MType: "gauge",
+		Value: &value,
+	})
+	assert.NoError(t, err)
+
+	repo.On(
+		"SetMetric",
+		mock.Anything,
+		mock.MatchedBy(func(m models.Metrics) bool {
+			return m.MType == "unknown"
+		}),
+	).Return(errors.New("unknown metric type"))
+
+	err = svc.SetMetric(models.Metrics{
+		ID:    "unknown",
+		MType: "unknown",
+	})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown")
+
+	repo.AssertExpectations(t)
 }
 
-func TestMetricsStorage_DecodeAndSetMetric(t *testing.T) {
-	m := &MetricsStorage{Metrics: make(map[string]models.Metrics)}
+func TestSetMetricBatch(t *testing.T) {
+	repo := new(MockMetricsRepo)
+	svc := service.NewMetricsService(repo)
 
-	body := `{
-        "id": "CPU",
-        "type": "gauge",
-        "value": 55.5
-    }`
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(body))
+	delta := int64(5)
+	value := 3.14
 
-	err := m.DecodeAndSetMetric(req)
-	if err != nil {
-		t.Fatalf("DecodeAndSetMetric() error = %v", err)
+	repo.On(
+		"SetMetric",
+		mock.Anything,
+		mock.AnythingOfType("models.Metrics"),
+	).Return(nil).Twice()
+
+	metrics := []models.Metrics{
+		{
+			ID:    "counter1",
+			MType: "counter",
+			Delta: &delta,
+		},
+		{
+			ID:    "gauge1",
+			MType: "gauge",
+			Value: &value,
+		},
 	}
 
-	metric, ok := m.Metrics["CPU"]
-	if !ok {
-		t.Fatalf("metric CPU not stored")
-	}
-	if metric.Value == nil || *metric.Value != 55.5 {
-		t.Fatalf("expected value 55.5, got %v", metric.Value)
-	}
-	if metric.MType != "gauge" {
-		t.Fatalf("expected type gauge, got %s", metric.MType)
-	}
+	err := svc.SetMetricBatch(metrics)
+	assert.NoError(t, err)
+
+	repo.AssertNumberOfCalls(t, "SetMetric", 2)
 }
 
-func float64Ptr(v float64) *float64 { return &v }
-func int64Ptr(v int64) *int64       { return &v }
+func TestGetMetric(t *testing.T) {
+	repo := new(MockMetricsRepo)
+	svc := service.NewMetricsService(repo)
+
+	repo.On("GetCounter", mock.Anything, "counter1").
+		Return(int64(42), nil)
+
+	repo.On("GetGauge", mock.Anything, "gauge1").
+		Return(3.14, nil)
+
+	m, err := svc.GetMetric("counter", "counter1")
+	assert.NoError(t, err)
+	assert.NotNil(t, m.Delta)
+	assert.Equal(t, int64(42), *m.Delta)
+
+	m, err = svc.GetMetric("gauge", "gauge1")
+	assert.NoError(t, err)
+	assert.NotNil(t, m.Value)
+	assert.Equal(t, 3.14, *m.Value)
+
+	_, err = svc.GetMetric("unknown", "id")
+	assert.Error(t, err)
+
+	repo.AssertExpectations(t)
+}

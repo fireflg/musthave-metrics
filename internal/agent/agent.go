@@ -13,7 +13,8 @@ type MetricsProvider interface {
 }
 
 type MetricsReporter interface {
-	Report(ctx context.Context, metric string, value float64) error
+	Report(ctx context.Context, metrics Metrics) error
+	WaitServer(ctx context.Context) error
 }
 
 type MetricsStorage interface {
@@ -49,6 +50,11 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.logger.Infof("Pool interval %v", a.cfg.PollInterval)
 	a.logger.Infof("Reporting interval %v", a.cfg.ReportInterval)
 
+	err := a.reporter.WaitServer(ctx)
+	if err != nil {
+		a.logger.Fatalf("Can't start agent! Server unreachable %v", err)
+	}
+
 	for {
 		select {
 		case <-pollTicker.C:
@@ -56,14 +62,15 @@ func (a *Agent) Start(ctx context.Context) error {
 			a.logger.Infof("Pool metric")
 
 		case <-reportTicker.C:
-			for metric, value := range a.Storage.(Metrics) {
 
-				err := a.reporter.Report(ctx, metric, value)
-				if err != nil {
-					a.logger.Warnw("Failed to report metric", "metric", metric, "value", value, "error", err)
-				}
-				a.logger.Infow("Reported metric", "metric", metric, "value", value)
+			err := a.reporter.Report(ctx, a.Storage.(Metrics))
+			if err != nil {
+				a.logger.Warnw("Failed to report metrics",
+					zap.Reflect("metrics", a.Storage.(Metrics)),
+					zap.Error(err),
+				)
 			}
+			a.logger.Infow("Reported metric", "metric", zap.Reflect("metrics", a.Storage.(Metrics)))
 
 		case <-ctx.Done():
 			return ctx.Err()

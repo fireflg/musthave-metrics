@@ -31,7 +31,7 @@ func LoadAgentConfig() (*Config, error) {
 
 	flag.Parse()
 
-	if cfg.ServerURL != "" && !strings.HasPrefix(cfg.ServerURL, "http") {
+	if !strings.Contains(cfg.ServerURL, "http://") {
 		cfg.ServerURL = "http://" + cfg.ServerURL
 	}
 

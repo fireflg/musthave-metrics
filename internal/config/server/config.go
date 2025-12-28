@@ -42,6 +42,5 @@ func LoadAServerConfig() (*Config, error) {
 	default:
 		cfg.StorageMode = "memory"
 	}
-	fmt.Println(cfg.StorageMode)
 	return &cfg, nil
 }

@@ -26,7 +26,6 @@ func (m *MemoryRepository) SetGauge(ctx context.Context, name string, value floa
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	metric, exists := m.Metrics[name]
 	if !exists {
 		metric = models.Metrics{

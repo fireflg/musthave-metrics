@@ -50,14 +50,40 @@ func createMetricsTableIfNotExists(db *sql.DB) error {
 }
 
 func (r *PostgresRepository) GetGauge(ctx context.Context, name string) (float64, error) {
-	var value float64
-	row := r.DB.QueryRowContext(ctx,
-		`SELECT value FROM metrics WHERE id = $1 AND type = 'gauge'`, name)
-	err := row.Scan(&value)
-	if err != nil {
-		return 0, err
+	const (
+		maxRetries = 3
+		retryDelay = 10 * time.Millisecond
+	)
+
+	var lastErr error
+
+	for i := 0; i < maxRetries; i++ {
+		var value float64
+
+		row := r.DB.QueryRowContext(ctx,
+			`SELECT value FROM metrics WHERE id = $1 AND type = 'gauge'`,
+			name,
+		)
+
+		err := row.Scan(&value)
+		if err == nil {
+			return value, nil
+		}
+
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+
+		lastErr = err
+
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(retryDelay):
+		}
 	}
-	return value, nil
+
+	return 0, lastErr
 }
 
 func (r *PostgresRepository) SetGauge(ctx context.Context, name string, value float64) error {
@@ -74,16 +100,40 @@ func (r *PostgresRepository) Ping(ctx context.Context) error {
 }
 
 func (r *PostgresRepository) GetCounter(ctx context.Context, name string) (int64, error) {
-	var value int64
-	row := r.DB.QueryRowContext(ctx,
-		`SELECT m.delta FROM metrics m WHERE m.id = $1 AND m.type = 'counter'`,
-		name)
-	err := row.Scan(&value)
-	if err != nil {
-		return 0, err
+	const (
+		maxRetries = 3
+		retryDelay = 10 * time.Millisecond
+	)
+
+	var lastErr error
+
+	for i := 0; i < maxRetries; i++ {
+		var value int64
+
+		row := r.DB.QueryRowContext(ctx,
+			`SELECT m.delta FROM metrics m WHERE m.id = $1 AND m.type = 'counter'`,
+			name,
+		)
+
+		err := row.Scan(&value)
+		if err == nil {
+			return value, nil
+		}
+
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+
+		lastErr = err
+
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(retryDelay):
+		}
 	}
 
-	return value, nil
+	return 0, lastErr
 }
 
 func (r *PostgresRepository) SetCounter(ctx context.Context, name string, value int64) error {
@@ -101,48 +151,34 @@ func (r *PostgresRepository) SetMetric(ctx context.Context, metric models.Metric
 		return errors.New("metric ID is empty")
 	}
 
-	tx, err := r.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
 	switch metric.MType {
 	case "counter":
 		if metric.Delta == nil {
 			return errors.New("counter metric delta is nil")
 		}
 
-		query := `
+		_, err := r.DB.ExecContext(ctx, `
 			INSERT INTO metrics AS m (id, type, delta)
 			VALUES ($1, 'counter', $2)
 			ON CONFLICT (id)
 			DO UPDATE SET delta = m.delta + EXCLUDED.delta
-		`
-
-		_, err = tx.ExecContext(ctx, query, metric.ID, *metric.Delta)
+		`, metric.ID, *metric.Delta)
+		return err
 
 	case "gauge":
 		if metric.Value == nil {
 			return errors.New("gauge metric value is nil")
 		}
 
-		query := `
+		_, err := r.DB.ExecContext(ctx, `
 			INSERT INTO metrics (id, type, value)
 			VALUES ($1, 'gauge', $2)
 			ON CONFLICT (id)
 			DO UPDATE SET value = EXCLUDED.value
-		`
-
-		_, err = tx.ExecContext(ctx, query, metric.ID, *metric.Value)
+		`, metric.ID, *metric.Value)
+		return err
 
 	default:
 		return fmt.Errorf("unknown metric type: %s", metric.MType)
 	}
-
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit()
 }

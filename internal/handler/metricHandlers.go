@@ -16,11 +16,12 @@ import (
 
 type MetricsHandler struct {
 	service service.MetricsService
+	logger  *zap.SugaredLogger
 }
 
-func (h *MetricsHandler) ServerRouter(logger *zap.SugaredLogger) chi.Router {
+func (h *MetricsHandler) ServerRouter() chi.Router {
 	r := chi.NewRouter()
-	r.Use(middleware.WithLogging(logger))
+	r.Use(middleware.WithLogging(h.logger))
 
 	r.Get("/", middleware.GzipMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -37,8 +38,8 @@ func (h *MetricsHandler) ServerRouter(logger *zap.SugaredLogger) chi.Router {
 	return r
 }
 
-func NewMetricsHandler(service service.MetricsService) *MetricsHandler {
-	return &MetricsHandler{service: service}
+func NewMetricsHandler(service service.MetricsService, logger *zap.SugaredLogger) *MetricsHandler {
+	return &MetricsHandler{service: service, logger: logger}
 }
 
 func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
@@ -126,9 +127,10 @@ func (h *MetricsHandler) GetMetricJSON(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var metric models.Metrics
-
 	if err := json.NewDecoder(r.Body).Decode(&metric); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		h.logger.Warn("failed to decode request body", "error", err)
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
 	}
 
 	respRaw := map[string]interface{}{
@@ -138,27 +140,47 @@ func (h *MetricsHandler) GetMetricJSON(w http.ResponseWriter, r *http.Request) {
 
 	value, err := h.service.GetMetric(metric.MType, metric.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		h.logger.Warn(
+			"metric not found",
+			"metric_type", metric.MType,
+			"metric_id", metric.ID,
+			"error", err,
+		)
+		http.Error(w, "metric not found", http.StatusNotFound)
+		return
 	}
 
-	if metric.MType == "gauge" {
+	switch metric.MType {
+	case "gauge":
 		if value.Value == nil {
-			http.Error(w, "value is nil", http.StatusInternalServerError)
+			h.logger.Error("gauge metric has nil value", "metric_id", metric.ID)
+			http.Error(w, "gauge value is nil", http.StatusInternalServerError)
 			return
 		}
 		respRaw["value"] = *value.Value
-	} else {
+
+	case "counter":
 		if value.Delta == nil {
-			http.Error(w, "delta is nil", http.StatusInternalServerError)
+			h.logger.Error("counter metric has nil delta", "metric_id", metric.ID)
+			http.Error(w, "counter delta is nil", http.StatusInternalServerError)
 			return
 		}
 		respRaw["delta"] = *value.Delta
+
+	default:
+		h.logger.Warn(
+			"unknown metric type",
+			"metric_type", metric.MType,
+			"metric_id", metric.ID,
+		)
+		http.Error(w, "unknown metric type", http.StatusBadRequest)
+		return
 	}
 
 	resp, err := json.Marshal(respRaw)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		h.logger.Error("failed to marshal response", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 

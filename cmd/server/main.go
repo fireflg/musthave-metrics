@@ -33,8 +33,8 @@ func main() {
 	}
 
 	metricsService := service.NewMetricsService(repo)
-	metricsHandler := handler.NewMetricsHandler(metricsService)
-	r := metricsHandler.ServerRouter(logger.Sugar())
+	metricsHandler := handler.NewMetricsHandler(metricsService, logger.Sugar())
+	r := metricsHandler.ServerRouter()
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),

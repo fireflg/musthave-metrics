@@ -3,11 +3,10 @@ package service_test
 import (
 	"context"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"testing"
-
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
 )
 
 type MockMetricsRepo struct {
@@ -23,7 +22,10 @@ func (m *MockMetricsRepo) SetGauge(ctx context.Context, id string, value float64
 	args := m.Called(ctx, id, value)
 	return args.Error(0)
 }
-
+func (m *MockMetricsRepo) SetMetric(ctx context.Context, metric models.Metrics) error {
+	args := m.Called(ctx, metric)
+	return args.Error(0)
+}
 func (m *MockMetricsRepo) GetCounter(ctx context.Context, id string) (int64, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0).(int64), args.Error(1)

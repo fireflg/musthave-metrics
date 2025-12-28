@@ -6,6 +6,7 @@ import (
 	"fmt"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository/memory"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,7 +34,10 @@ func NewFileRepository(
 			Metrics: make(map[string]models.Metrics),
 		},
 	}
-	repo.InitStorage()
+	err := repo.InitStorage()
+	if err != nil {
+		log.Printf("Error initializing file repository: %v", err)
+	}
 	return repo
 }
 
@@ -75,6 +79,12 @@ func (f *FileRepository) SetMetric(ctx context.Context, metric models.Metrics) e
 	if err := f.MemoryRepository.SetMetric(ctx, metric); err != nil {
 		return err
 	}
+	if f.storageInterval == 0 {
+		err := f.StoreMetrics()
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -82,15 +92,16 @@ func (f *FileRepository) Ping(ctx context.Context) error {
 	return f.MemoryRepository.Ping(ctx)
 }
 
-func (f *FileRepository) InitStorage() {
+func (f *FileRepository) InitStorage() error {
 	if f.storageRestore {
 		if err := f.RestoreMetrics(); err != nil {
-			return
+			return err
 		}
 	}
 	if f.storageInterval > 0 {
 		go f.startPeriodicSave()
 	}
+	return nil
 }
 
 func (f *FileRepository) startPeriodicSave() {
@@ -148,16 +159,10 @@ func (f *FileRepository) RestoreMetrics() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	for _, m := range metricsArray {
-		switch m.MType {
-		case "gauge":
-			if m.Value != nil {
-				f.MemoryRepository.SetGauge(ctx, m.ID, *m.Value)
-			}
-		case "counter":
-			if m.Delta != nil {
-				f.MemoryRepository.SetCounter(ctx, m.ID, *m.Delta)
-			}
+	for _, metric := range metricsArray {
+		err := f.MemoryRepository.SetMetric(ctx, metric)
+		if err != nil {
+			return err
 		}
 	}
 	return nil

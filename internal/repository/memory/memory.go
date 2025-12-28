@@ -73,6 +73,9 @@ func (m *MemoryRepository) SetMetric(ctx context.Context, metric models.Metrics)
 		return fmt.Errorf("metric ID is empty")
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	switch metric.MType {
 	case "counter":
 		if metric.Delta == nil {

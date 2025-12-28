@@ -9,7 +9,7 @@ import (
 type Config struct {
 	RunAddr                   string `env:"ADDRESS" envDefault:":8080"`
 	PersistentStorageInterval int    `env:"STORAGE_INTERVAL" envDefault:"0"`
-	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"metrics.json"`
+	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"test.json"`
 	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`
 	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`
 	StorageMode               string
@@ -42,5 +42,6 @@ func LoadAServerConfig() (*Config, error) {
 	default:
 		cfg.StorageMode = "memory"
 	}
+	fmt.Println(cfg.StorageMode)
 	return &cfg, nil
 }

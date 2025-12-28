@@ -102,7 +102,7 @@ func (r *PostgresRepository) Ping(ctx context.Context) error {
 func (r *PostgresRepository) GetCounter(ctx context.Context, name string) (int64, error) {
 	const (
 		maxRetries = 3
-		retryDelay = 10 * time.Millisecond
+		retryDelay = 50 * time.Millisecond
 	)
 
 	var lastErr error
@@ -158,10 +158,10 @@ func (r *PostgresRepository) SetMetric(ctx context.Context, metric models.Metric
 		}
 
 		_, err := r.DB.ExecContext(ctx, `
-			INSERT INTO metrics AS m (id, type, delta)
-			VALUES ($1, 'counter', $2)
-			ON CONFLICT (id)
-			DO UPDATE SET delta = m.delta + EXCLUDED.delta
+		INSERT INTO metrics AS m (id, type, delta)
+		VALUES ($1, 'counter', $2)
+		ON CONFLICT (id)
+		DO UPDATE SET delta = COALESCE(m.delta, 0) + EXCLUDED.delta
 		`, metric.ID, *metric.Delta)
 		return err
 

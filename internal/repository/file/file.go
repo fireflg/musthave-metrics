@@ -88,6 +88,26 @@ func (f *FileRepository) SetMetric(ctx context.Context, metric models.Metrics) e
 	return nil
 }
 
+func (f *FileRepository) SetMetrics(ctx context.Context, metric []models.Metrics) error {
+	if err := f.MemoryRepository.SetMetrics(ctx, metric); err != nil {
+		return err
+	}
+	if f.storageInterval == 0 {
+		err := f.StoreMetrics()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *FileRepository) GetMetric(ctx context.Context, metricID, metricType string) (*models.Metrics, error) {
+	metric, err := f.MemoryRepository.GetMetric(ctx, metricID, metricType)
+	if err != nil {
+		return nil, err
+	}
+	return metric, nil
+}
 func (f *FileRepository) Ping(ctx context.Context) error {
 	return f.MemoryRepository.Ping(ctx)
 }

@@ -41,7 +41,7 @@ func createMetricsTableIfNotExists(db *sql.DB) error {
     CREATE TABLE IF NOT EXISTS metrics (
         id    VARCHAR(255) PRIMARY KEY,
         type VARCHAR(255) NOT NULL,
-        delta INTEGER,
+        delta BIGINT,
         value DOUBLE PRECISION,
         hash  VARCHAR(64)
     )`
@@ -50,40 +50,18 @@ func createMetricsTableIfNotExists(db *sql.DB) error {
 }
 
 func (r *PostgresRepository) GetGauge(ctx context.Context, name string) (float64, error) {
-	const (
-		maxRetries = 3
-		retryDelay = 10 * time.Millisecond
-	)
+	var value float64
 
-	var lastErr error
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT value FROM metrics WHERE id = $1 AND type = 'gauge'`,
+		name,
+	).Scan(&value)
 
-	for i := 0; i < maxRetries; i++ {
-		var value float64
-
-		row := r.DB.QueryRowContext(ctx,
-			`SELECT value FROM metrics WHERE id = $1 AND type = 'gauge'`,
-			name,
-		)
-
-		err := row.Scan(&value)
-		if err == nil {
-			return value, nil
-		}
-
-		if !errors.Is(err, sql.ErrNoRows) {
-			return 0, err
-		}
-
-		lastErr = err
-
-		select {
-		case <-ctx.Done():
-			return 0, ctx.Err()
-		case <-time.After(retryDelay):
-		}
+	if err != nil {
+		return 0, err
 	}
 
-	return 0, lastErr
+	return value, nil
 }
 
 func (r *PostgresRepository) SetGauge(ctx context.Context, name string, value float64) error {
@@ -100,40 +78,18 @@ func (r *PostgresRepository) Ping(ctx context.Context) error {
 }
 
 func (r *PostgresRepository) GetCounter(ctx context.Context, name string) (int64, error) {
-	const (
-		maxRetries = 3
-		retryDelay = 50 * time.Millisecond
-	)
+	var value int64
 
-	var lastErr error
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT delta FROM metrics WHERE id = $1 AND type = 'counter'`,
+		name,
+	).Scan(&value)
 
-	for i := 0; i < maxRetries; i++ {
-		var value int64
-
-		row := r.DB.QueryRowContext(ctx,
-			`SELECT m.delta FROM metrics m WHERE m.id = $1 AND m.type = 'counter'`,
-			name,
-		)
-
-		err := row.Scan(&value)
-		if err == nil {
-			return value, nil
-		}
-
-		if !errors.Is(err, sql.ErrNoRows) {
-			return 0, err
-		}
-
-		lastErr = err
-
-		select {
-		case <-ctx.Done():
-			return 0, ctx.Err()
-		case <-time.After(retryDelay):
-		}
+	if err != nil {
+		return 0, err
 	}
 
-	return 0, lastErr
+	return value, nil
 }
 
 func (r *PostgresRepository) SetCounter(ctx context.Context, name string, value int64) error {
@@ -157,28 +113,171 @@ func (r *PostgresRepository) SetMetric(ctx context.Context, metric models.Metric
 			return errors.New("counter metric delta is nil")
 		}
 
-		_, err := r.DB.ExecContext(ctx, `
-		INSERT INTO metrics AS m (id, type, delta)
-		VALUES ($1, 'counter', $2)
-		ON CONFLICT (id)
-		DO UPDATE SET delta = COALESCE(m.delta, 0) + EXCLUDED.delta
+		res, err := r.DB.ExecContext(ctx, `
+			UPDATE metrics
+			SET delta = COALESCE(delta, 0) + $2
+			WHERE id = $1 AND type = 'counter'
 		`, metric.ID, *metric.Delta)
-		return err
+		if err != nil {
+			return err
+		}
+
+		rowsAffected, _ := res.RowsAffected()
+		if rowsAffected == 0 {
+			_, err := r.DB.ExecContext(ctx, `
+				INSERT INTO metrics (id, type, delta)
+				VALUES ($1, 'counter', $2)
+			`, metric.ID, *metric.Delta)
+			if err != nil {
+				return err
+			}
+		}
 
 	case "gauge":
 		if metric.Value == nil {
 			return errors.New("gauge metric value is nil")
 		}
 
-		_, err := r.DB.ExecContext(ctx, `
-			INSERT INTO metrics (id, type, value)
-			VALUES ($1, 'gauge', $2)
-			ON CONFLICT (id)
-			DO UPDATE SET value = EXCLUDED.value
+		res, err := r.DB.ExecContext(ctx, `
+			UPDATE metrics
+			SET value = $2
+			WHERE id = $1 AND type = 'gauge'
 		`, metric.ID, *metric.Value)
-		return err
+		if err != nil {
+			return err
+		}
+
+		rowsAffected, _ := res.RowsAffected()
+		if rowsAffected == 0 {
+			_, err := r.DB.ExecContext(ctx, `
+				INSERT INTO metrics (id, type, value)
+				VALUES ($1, 'gauge', $2)
+			`, metric.ID, *metric.Value)
+			if err != nil {
+				return err
+			}
+		}
 
 	default:
 		return fmt.Errorf("unknown metric type: %s", metric.MType)
 	}
+
+	return nil
+}
+
+func (r *PostgresRepository) SetMetrics(ctx context.Context, metrics []models.Metrics) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+
+	tx, err := r.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, metric := range metrics {
+		if metric.ID == "" {
+			return errors.New("metric ID is empty")
+		}
+
+		switch metric.MType {
+		case "counter":
+			if metric.Delta == nil {
+				return errors.New("counter metric delta is nil")
+			}
+
+			res, err := tx.ExecContext(ctx, `
+				UPDATE metrics
+				SET delta = COALESCE(delta, 0) + $2
+				WHERE id = $1 AND type = 'counter'
+			`, metric.ID, *metric.Delta)
+			if err != nil {
+				return err
+			}
+
+			rowsAffected, _ := res.RowsAffected()
+			if rowsAffected == 0 {
+				_, err := tx.ExecContext(ctx, `
+					INSERT INTO metrics (id, type, delta)
+					VALUES ($1, 'counter', $2)
+				`, metric.ID, *metric.Delta)
+				if err != nil {
+					return err
+				}
+			}
+
+		case "gauge":
+			if metric.Value == nil {
+				return errors.New("gauge metric value is nil")
+			}
+
+			res, err := tx.ExecContext(ctx, `
+				UPDATE metrics
+				SET value = $2
+				WHERE id = $1 AND type = 'gauge'
+			`, metric.ID, *metric.Value)
+			if err != nil {
+				return err
+			}
+
+			rowsAffected, _ := res.RowsAffected()
+			if rowsAffected == 0 {
+				_, err := tx.ExecContext(ctx, `
+					INSERT INTO metrics (id, type, value)
+					VALUES ($1, 'gauge', $2)
+				`, metric.ID, *metric.Value)
+				if err != nil {
+					return err
+				}
+			}
+
+		default:
+			return fmt.Errorf("unknown metric type: %s", metric.MType)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *PostgresRepository) GetMetric(ctx context.Context, metricID, metricType string) (*models.Metrics, error) {
+
+	m := &models.Metrics{MType: metricType, ID: metricID}
+
+	switch metricType {
+	case "counter":
+		var v int64
+		err := r.DB.QueryRowContext(ctx, `
+            SELECT delta FROM metrics WHERE id=$1 AND type='counter'
+        `, metricID).Scan(&v)
+
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+			return nil, err
+		}
+
+		m.Delta = &v
+
+	case "gauge":
+		var v float64
+		err := r.DB.QueryRowContext(ctx, `
+            SELECT value FROM metrics WHERE id=$1 AND type='gauge'
+        `, metricID).Scan(&v)
+
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+			return nil, err
+		}
+
+		m.Value = &v
+
+	default:
+		return nil, fmt.Errorf("unknown metric type: %s", metricType)
+	}
+
+	return m, nil
 }

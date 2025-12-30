@@ -24,7 +24,7 @@ func main() {
 		logger.Fatal("Failed to load config", zap.Error(err))
 	}
 
-	reporter := agent.NewReporter(cfg.ServerURL)
+	reporter := agent.NewReporter(cfg.ServerURL, cfg.SecretKey)
 	provider := agent.Provider{}
 	storage := agent.Metrics{}
 

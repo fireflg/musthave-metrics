@@ -82,27 +82,33 @@ func (m *MemoryRepository) SetMetric(ctx context.Context, metric models.Metrics)
 		}
 
 		existing, exists := m.Metrics[metric.ID]
-		if !exists {
-			existing = models.Metrics{
-				ID:    metric.ID,
-				MType: "counter",
-			}
+		if exists && existing.MType != "counter" {
+			return fmt.Errorf("metric type mismatch for %s", metric.ID)
 		}
 
 		var current int64
-		if existing.Delta != nil {
+		if exists && existing.Delta != nil {
 			current = *existing.Delta
 		}
 
-		current += *metric.Delta
-		existing.Delta = &current
-		existing.Value = nil
+		newValue := current + *metric.Delta
+		existing = models.Metrics{
+			ID:    metric.ID,
+			MType: "counter",
+			Delta: &newValue,
+			Value: nil,
+		}
 
 		m.Metrics[metric.ID] = existing
 
 	case "gauge":
 		if metric.Value == nil {
 			return fmt.Errorf("gauge metric value is nil")
+		}
+
+		existing, exists := m.Metrics[metric.ID]
+		if exists && existing.MType != "gauge" {
+			return fmt.Errorf("metric type mismatch for %s", metric.ID)
 		}
 
 		m.Metrics[metric.ID] = models.Metrics{
@@ -116,6 +122,17 @@ func (m *MemoryRepository) SetMetric(ctx context.Context, metric models.Metrics)
 		return fmt.Errorf("unknown metric type: %s", metric.MType)
 	}
 
+	return nil
+}
+
+func (m *MemoryRepository) SetMetrics(ctx context.Context, metrics []models.Metrics) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+
+	for _, metric := range metrics {
+		m.SetMetric(ctx, metric)
+	}
 	return nil
 }
 
@@ -156,6 +173,39 @@ func (m *MemoryRepository) GetGauge(ctx context.Context, name string) (float64, 
 	}
 	return *metric.Value, nil
 
+}
+
+func (m *MemoryRepository) GetMetric(ctx context.Context, metricID, metricType string) (*models.Metrics, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("operation canceled: %w", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	metric, exists := m.Metrics[metricID]
+	if !exists {
+		return nil, errors.New("metric not found")
+	}
+
+	switch metricType {
+	case "counter":
+		if metric.Delta == nil {
+			return nil, errors.New("counter delta is nil")
+		}
+		return &models.Metrics{Delta: metric.Delta,
+			MType: metricType}, nil
+
+	case "gauge":
+		if metric.Value == nil {
+			return nil, errors.New("gauge value is nil")
+		}
+		return &models.Metrics{Value: metric.Value,
+			MType: metricType}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown metric type: %s", metricType)
+	}
 }
 
 func (m *MemoryRepository) Ping(ctx context.Context) error {

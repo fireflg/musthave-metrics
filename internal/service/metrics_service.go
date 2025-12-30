@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/config/server"
 	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -12,7 +11,7 @@ import (
 type MetricsService interface {
 	SetMetric(metric models.Metrics) error
 	SetMetricBatch(metrics []models.Metrics) error
-	GetMetric(metricType string, metricName string) (models.Metrics, error)
+	GetMetric(metricID, metricType string) (*models.Metrics, error)
 	CheckRepository() error
 }
 type MetricsServiceImpl struct {
@@ -27,7 +26,8 @@ func NewMetricsService(repo models.MetricsRepository) MetricsService {
 }
 
 func (m *MetricsServiceImpl) SetMetric(metric models.Metrics) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	if err := m.repo.SetMetric(ctx, metric); err != nil {
 		return err
 	}
@@ -35,42 +35,22 @@ func (m *MetricsServiceImpl) SetMetric(metric models.Metrics) error {
 }
 
 func (m *MetricsServiceImpl) SetMetricBatch(metrics []models.Metrics) error {
-	for _, metric := range metrics {
-		ctx := context.Background()
-		if err := m.repo.SetMetric(ctx, metric); err != nil {
-			return err
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := m.repo.SetMetrics(ctx, metrics); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (m *MetricsServiceImpl) GetMetric(metricType string, metricName string) (models.Metrics, error) {
-	switch metricType {
-	case "counter":
-		delta, err := m.repo.GetCounter(context.Background(), metricName)
-		if err != nil {
-			return models.Metrics{}, err
-		}
-		return models.Metrics{
-			ID:    metricName,
-			MType: "counter",
-			Delta: &delta,
-		}, nil
-
-	case "gauge":
-		value, err := m.repo.GetGauge(context.Background(), metricName)
-		if err != nil {
-			return models.Metrics{}, err
-		}
-		return models.Metrics{
-			ID:    metricName,
-			MType: "gauge",
-			Value: &value,
-		}, nil
-
-	default:
-		return models.Metrics{}, fmt.Errorf("unknown metric type: %s", metricType)
+func (m *MetricsServiceImpl) GetMetric(metricID, metricType string) (*models.Metrics, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	metric, err := m.repo.GetMetric(ctx, metricID, metricType)
+	if err != nil {
+		return nil, err
 	}
+	return metric, nil
 }
 
 func (m *MetricsServiceImpl) CheckRepository() error {

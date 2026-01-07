@@ -12,6 +12,7 @@ type Config struct {
 	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"metrics.json"`
 	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`
 	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`
+	HashKey                   string `env:"HASH_KEY" envDefault:""`
 	StorageMode               string
 }
 
@@ -28,6 +29,7 @@ func LoadAServerConfig() (*Config, error) {
 	flag.IntVar(&cfg.PersistentStorageInterval, "i", cfg.PersistentStorageInterval, "Interval to store metrics in seconds (0 = sync save)")
 	flag.BoolVar(&cfg.PersistentStorageRestore, "r", cfg.PersistentStorageRestore, "Whether to restore metrics")
 	flag.StringVar(&cfg.DatabaseDSN, "d", cfg.DatabaseDSN, "Database connection string")
+	flag.StringVar(&cfg.HashKey, "k", cfg.HashKey, "Hash key")
 	flag.Parse()
 
 	if unknownFlags := flag.Args(); len(unknownFlags) > 0 {

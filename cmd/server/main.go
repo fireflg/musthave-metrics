@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	logger, err := zap.NewDevelopment()
+	logger, err := zap.NewProduction()
 	if err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}

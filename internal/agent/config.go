@@ -9,8 +9,10 @@ import (
 
 type Config struct {
 	ServerURL      string `env:"ADDRESS" envDefault:"http://localhost:8080"`
-	PollInterval   int    `env:"POLL_INTERVAL" envDefault:"2"`
+	PollInterval   int    `env:"POLL_INTERVAL" envDefault:"0"`
 	ReportInterval int    `env:"REPORT_INTERVAL" envDefault:"10"`
+	SecretKey      string `env:"KEY" envDefault:""`
+	RateLimit      int    `env:"RATE_LIMIT" envDefault:"3"`
 }
 
 func LoadAgentConfig() (*Config, error) {
@@ -24,6 +26,8 @@ func LoadAgentConfig() (*Config, error) {
 	flag.StringVar(&cfg.ServerURL, "a", cfg.ServerURL, "Server address (default: from env or 'localhost:8080')")
 	flag.IntVar(&cfg.PollInterval, "p", cfg.PollInterval, "Poll interval in seconds (default: from env or 10)")
 	flag.IntVar(&cfg.ReportInterval, "r", cfg.ReportInterval, "Report interval in seconds (default: from env or 5)")
+	flag.StringVar(&cfg.SecretKey, "k", cfg.SecretKey, "Hash key (default: env or 'key')")
+	flag.IntVar(&cfg.RateLimit, "l", cfg.RateLimit, "Rate limit send to server")
 
 	if unknownFlags := flag.Args(); len(unknownFlags) > 0 {
 		return nil, fmt.Errorf("invalid flags: %v", unknownFlags)

@@ -24,11 +24,10 @@ func main() {
 		logger.Fatal("Failed to load config", zap.Error(err))
 	}
 
-	reporter := agent.NewReporter(cfg.ServerURL)
+	reporter := agent.NewReporter(cfg.ServerURL, cfg.SecretKey)
 	provider := agent.Provider{}
-	storage := agent.Metrics{}
 
-	agent := agent.NewAgent(cfg, &provider, reporter, logger, storage)
+	agent := agent.NewAgent(cfg, &provider, reporter, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

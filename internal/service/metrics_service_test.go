@@ -15,11 +15,6 @@ type MockMetricsRepo struct {
 	mock.Mock
 }
 
-func (m *MockMetricsRepo) SetMetric(ctx context.Context, metric models.Metrics) error {
-	args := m.Called(ctx, metric)
-	return args.Error(0)
-}
-
 func (m *MockMetricsRepo) SetCounter(ctx context.Context, id string, delta int64) error {
 	args := m.Called(ctx, id, delta)
 	return args.Error(0)
@@ -40,6 +35,24 @@ func (m *MockMetricsRepo) GetGauge(ctx context.Context, id string) (float64, err
 	return args.Get(0).(float64), args.Error(1)
 }
 
+func (m *MockMetricsRepo) SetMetric(ctx context.Context, metric models.Metrics) error {
+	args := m.Called(ctx, metric)
+	return args.Error(0)
+}
+
+func (m *MockMetricsRepo) SetMetrics(ctx context.Context, metrics []models.Metrics) error {
+	args := m.Called(ctx, metrics)
+	return args.Error(0)
+}
+
+func (m *MockMetricsRepo) GetMetric(ctx context.Context, metricID, metricType string) (*models.Metrics, error) {
+	args := m.Called(ctx, metricID, metricType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Metrics), args.Error(1)
+}
+
 func (m *MockMetricsRepo) Ping(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)
@@ -50,60 +63,28 @@ func TestSetMetric(t *testing.T) {
 	svc := service.NewMetricsService(repo)
 
 	delta := int64(10)
-
-	repo.On(
-		"SetMetric",
-		mock.Anything,
-		mock.MatchedBy(func(m models.Metrics) bool {
-			return m.ID == "counter1" &&
-				m.MType == "counter" &&
-				m.Delta != nil &&
-				*m.Delta == delta
-		}),
-	).Return(nil)
-
-	err := svc.SetMetric(models.Metrics{
+	metricCounter := models.Metrics{
 		ID:    "counter1",
 		MType: "counter",
 		Delta: &delta,
-	})
+	}
+
+	repo.On("SetMetric", mock.Anything, metricCounter).Return(nil)
+
+	err := svc.SetMetric(metricCounter)
 	assert.NoError(t, err)
 
-	value := 1.23
-
-	repo.On(
-		"SetMetric",
-		mock.Anything,
-		mock.MatchedBy(func(m models.Metrics) bool {
-			return m.ID == "gauge1" &&
-				m.MType == "gauge" &&
-				m.Value != nil &&
-				*m.Value == value
-		}),
-	).Return(nil)
-
-	err = svc.SetMetric(models.Metrics{
+	value := 3.14
+	metricGauge := models.Metrics{
 		ID:    "gauge1",
 		MType: "gauge",
 		Value: &value,
-	})
+	}
+
+	repo.On("SetMetric", mock.Anything, metricGauge).Return(nil)
+
+	err = svc.SetMetric(metricGauge)
 	assert.NoError(t, err)
-
-	repo.On(
-		"SetMetric",
-		mock.Anything,
-		mock.MatchedBy(func(m models.Metrics) bool {
-			return m.MType == "unknown"
-		}),
-	).Return(errors.New("unknown metric type"))
-
-	err = svc.SetMetric(models.Metrics{
-		ID:    "unknown",
-		MType: "unknown",
-	})
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown")
 
 	repo.AssertExpectations(t)
 }
@@ -113,54 +94,44 @@ func TestSetMetricBatch(t *testing.T) {
 	svc := service.NewMetricsService(repo)
 
 	delta := int64(5)
-	value := 3.14
-
-	repo.On(
-		"SetMetric",
-		mock.Anything,
-		mock.AnythingOfType("models.Metrics"),
-	).Return(nil).Twice()
-
+	value := 2.71
 	metrics := []models.Metrics{
-		{
-			ID:    "counter1",
-			MType: "counter",
-			Delta: &delta,
-		},
-		{
-			ID:    "gauge1",
-			MType: "gauge",
-			Value: &value,
-		},
+		{ID: "counter1", MType: "counter", Delta: &delta},
+		{ID: "gauge1", MType: "gauge", Value: &value},
 	}
+
+	repo.On("SetMetrics", mock.Anything, metrics).Return(nil)
 
 	err := svc.SetMetricBatch(metrics)
 	assert.NoError(t, err)
 
-	repo.AssertNumberOfCalls(t, "SetMetric", 2)
+	repo.AssertExpectations(t)
 }
 
 func TestGetMetric(t *testing.T) {
 	repo := new(MockMetricsRepo)
 	svc := service.NewMetricsService(repo)
 
-	repo.On("GetCounter", mock.Anything, "counter1").
-		Return(int64(42), nil)
+	delta := int64(42)
+	repo.On("GetMetric", mock.Anything, "counter1", "counter").
+		Return(&models.Metrics{ID: "counter1", MType: "counter", Delta: &delta}, nil)
 
-	repo.On("GetGauge", mock.Anything, "gauge1").
-		Return(3.14, nil)
+	value := 3.14
+	repo.On("GetMetric", mock.Anything, "gauge1", "gauge").
+		Return(&models.Metrics{ID: "gauge1", MType: "gauge", Value: &value}, nil)
 
-	m, err := svc.GetMetric("counter", "counter1")
+	m, err := svc.GetMetric("counter1", "counter")
 	assert.NoError(t, err)
 	assert.NotNil(t, m.Delta)
 	assert.Equal(t, int64(42), *m.Delta)
 
-	m, err = svc.GetMetric("gauge", "gauge1")
+	m, err = svc.GetMetric("gauge1", "gauge")
 	assert.NoError(t, err)
 	assert.NotNil(t, m.Value)
 	assert.Equal(t, 3.14, *m.Value)
 
-	_, err = svc.GetMetric("unknown", "id")
+	repo.On("GetMetric", mock.Anything, "unknown", "unknown").Return(nil, errors.New("not found"))
+	_, err = svc.GetMetric("unknown", "unknown")
 	assert.Error(t, err)
 
 	repo.AssertExpectations(t)

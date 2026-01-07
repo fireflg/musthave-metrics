@@ -20,6 +20,11 @@ type Reporter struct {
 	secretKey string
 }
 
+type MetricsReporter interface {
+	Report(ctx context.Context, metrics Metrics) error
+	WaitServer(ctx context.Context) error
+}
+
 func NewReporter(serverURL string, secretKey string) *Reporter {
 	client := retryablehttp.NewClient()
 	// Временный хардкод параметров

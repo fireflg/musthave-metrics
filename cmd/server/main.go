@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/config/server"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/observer"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
 	"go.uber.org/zap"
@@ -32,7 +33,13 @@ func main() {
 		logger.Fatal("Failed to initialize repository", zap.Error(err))
 	}
 
-	metricsService := service.NewMetricsService(repo)
+	var auditor *observer.Auditor
+	if cfg.AuditFile != "" || cfg.AuditURL != "" {
+		auditor = observer.NewAuditor(cfg.AuditFile, cfg.AuditURL)
+		sugar.Infow("Audit enabled", "file", cfg.AuditFile, "url", cfg.AuditURL)
+	}
+
+	metricsService := service.NewMetricsService(repo, auditor)
 	metricsHandler := handler.NewMetricsHandler(metricsService, logger.Sugar())
 	r := metricsHandler.ServerRouter()
 

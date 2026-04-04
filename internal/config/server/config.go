@@ -13,6 +13,8 @@ type Config struct {
 	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`
 	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`
 	HashKey                   string `env:"HASH_KEY" envDefault:""`
+	AuditFile                 string `env:"AUDIT_FILE" envDefault:""`
+	AuditURL                  string `env:"AUDIT_URL" envDefault:""`
 	StorageMode               string
 }
 
@@ -30,6 +32,8 @@ func LoadAServerConfig() (*Config, error) {
 	flag.BoolVar(&cfg.PersistentStorageRestore, "r", cfg.PersistentStorageRestore, "Whether to restore metrics")
 	flag.StringVar(&cfg.DatabaseDSN, "d", cfg.DatabaseDSN, "Database connection string")
 	flag.StringVar(&cfg.HashKey, "k", cfg.HashKey, "Hash key")
+	flag.StringVar(&cfg.AuditFile, "audit-file", cfg.AuditFile, "Path to audit log file")
+	flag.StringVar(&cfg.AuditURL, "audit-url", cfg.AuditURL, "URL to send audit logs")
 	flag.Parse()
 
 	if unknownFlags := flag.Args(); len(unknownFlags) > 0 {

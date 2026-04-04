@@ -82,7 +82,6 @@ func (r *Reporter) Report(ctx context.Context, metrics Metrics) error {
 
 	if len(r.secretKey) > 0 {
 		hash, err = r.signPayload(payload)
-		fmt.Println(hash)
 		if err != nil {
 			return err
 		}

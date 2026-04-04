@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
@@ -113,7 +114,12 @@ func (h *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 		}
 		metric.Delta = &intValue
 	}
-	if err := h.service.SetMetric(metric); err != nil {
+
+	ip := r.RemoteAddr
+
+	ctx := context.WithValue(r.Context(), "client_ip", ip)
+
+	if err := h.service.SetMetric(ctx, metric); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -133,7 +139,11 @@ func (h *MetricsHandler) UpdateMetricJSON(w http.ResponseWriter, r *http.Request
 
 	h.logger.Infof("update metric %s type %s value %d, delta %d", metric.ID, metric.MType, metric.Value, metric.Delta)
 
-	err := h.service.SetMetric(metric)
+	ip := r.RemoteAddr
+
+	ctx := context.WithValue(r.Context(), "client_ip", ip)
+
+	err := h.service.SetMetric(ctx, metric)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		h.logger.Errorf("failed to update metric %s: %v", metric.ID, err)
@@ -191,7 +201,13 @@ func (h *MetricsHandler) UpdateMetricJSONBatch(w http.ResponseWriter, r *http.Re
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	h.logger.Info("update metrics", zap.Any("metrics", metrics))
-	err := h.service.SetMetricBatch(metrics)
+
+	ip := r.RemoteAddr
+
+	ctx := context.WithValue(r.Context(), "client_ip", ip)
+
+	err := h.service.SetMetricBatch(ctx, metrics)
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		h.logger.Errorf("failed to update metrics batch: %v", err)

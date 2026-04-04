@@ -15,8 +15,9 @@ import (
 )
 
 type MetricsHandler struct {
-	service service.MetricsService
-	logger  *zap.SugaredLogger
+	service   service.MetricsService
+	logger    *zap.SugaredLogger
+	secretKey string
 }
 
 func (h *MetricsHandler) ServerRouter() chi.Router {
@@ -28,13 +29,13 @@ func (h *MetricsHandler) ServerRouter() chi.Router {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("<br>hi<br>"))
 	}))
+
 	r.Get("/value/{metricType}/{metricName}", h.GetMetric)
-	r.Post("/update/{metricType}/{metricName}/{metricValue}", h.UpdateMetric)
-	r.Post("/update/", middleware.GzipMiddleware(h.UpdateMetricJSON))
-	r.Post("/updates/", middleware.GzipMiddleware(h.UpdateMetricJSONBatch))
+	r.Post("/update/{metricType}/{metricName}/{metricValue}", middleware.SignMiddleware(h.UpdateMetric, h.secretKey, h.logger))
+	r.Post("/update/", middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSON, h.secretKey, h.logger)))
+	r.Post("/updates/", middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSONBatch, h.secretKey, h.logger)))
 	r.Post("/value/", middleware.GzipMiddleware(h.GetMetricJSON))
 	r.Get("/ping", h.CheckDB)
-
 	return r
 }
 
@@ -45,7 +46,7 @@ func NewMetricsHandler(service service.MetricsService, logger *zap.SugaredLogger
 func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 	var strValue string
 
-	value, err := h.service.GetMetric(chi.URLParam(r, "metricType"), chi.URLParam(r, "metricName"))
+	value, err := h.service.GetMetric(chi.URLParam(r, "metricName"), chi.URLParam(r, "metricType"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -54,11 +55,26 @@ func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 
-	if value.MType == "gauge" {
+	switch value.MType {
+	case "gauge":
+		if value.Value == nil {
+			http.Error(w, "gauge value is nil", http.StatusInternalServerError)
+			return
+		}
 		strValue = strconv.FormatFloat(*value.Value, 'f', -1, 64)
-	} else {
+
+	case "counter":
+		if value.Delta == nil {
+			http.Error(w, "counter delta is nil", http.StatusInternalServerError)
+			return
+		}
 		strValue = strconv.FormatInt(*value.Delta, 10)
+
+	default:
+		http.Error(w, "unknown metric type", http.StatusInternalServerError)
+		return
 	}
+
 	_, err = io.WriteString(w, strValue)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -115,9 +131,12 @@ func (h *MetricsHandler) UpdateMetricJSON(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusBadRequest)
 	}
 
+	h.logger.Infof("update metric %s type %s value %d, delta %d", metric.ID, metric.MType, metric.Value, metric.Delta)
+
 	err := h.service.SetMetric(metric)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Errorf("failed to update metric %s: %v", metric.ID, err)
 	}
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -133,59 +152,34 @@ func (h *MetricsHandler) GetMetricJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respRaw := map[string]interface{}{
-		"id":   metric.ID,
-		"type": metric.MType,
-	}
-
-	value, err := h.service.GetMetric(metric.MType, metric.ID)
+	value, err := h.service.GetMetric(metric.ID, metric.MType)
 	if err != nil {
-		h.logger.Warn(
-			"metric not found",
-			"metric_type", metric.MType,
-			"metric_id", metric.ID,
-			"error", err,
-		)
+		h.logger.Warnf("metric not found type %s id %s error %s", metric.MType, metric.ID, err)
 		http.Error(w, "metric not found", http.StatusNotFound)
 		return
 	}
 
-	switch metric.MType {
-	case "gauge":
-		if value.Value == nil {
-			h.logger.Error("gauge metric has nil value", "metric_id", metric.ID)
-			http.Error(w, "gauge value is nil", http.StatusInternalServerError)
-			return
-		}
-		respRaw["value"] = *value.Value
-
-	case "counter":
-		if value.Delta == nil {
-			h.logger.Error("counter metric has nil delta", "metric_id", metric.ID)
-			http.Error(w, "counter delta is nil", http.StatusInternalServerError)
-			return
-		}
-		respRaw["delta"] = *value.Delta
-
-	default:
-		h.logger.Warn(
-			"unknown metric type",
-			"metric_type", metric.MType,
-			"metric_id", metric.ID,
-		)
-		http.Error(w, "unknown metric type", http.StatusBadRequest)
-		return
+	resp := map[string]interface{}{
+		"id":   metric.ID,
+		"type": metric.MType,
 	}
 
-	resp, err := json.Marshal(respRaw)
+	if value.Delta != nil {
+		resp["delta"] = *value.Delta
+	}
+	if value.Value != nil {
+		resp["value"] = *value.Value
+	}
+
+	data, err := json.Marshal(resp)
 	if err != nil {
-		h.logger.Error("failed to marshal response", "error", err)
+		h.logger.Errorf("failed to marshal response, error: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
+	w.Write(data)
 }
 
 func (h *MetricsHandler) UpdateMetricJSONBatch(w http.ResponseWriter, r *http.Request) {
@@ -196,9 +190,11 @@ func (h *MetricsHandler) UpdateMetricJSONBatch(w http.ResponseWriter, r *http.Re
 	if err := json.NewDecoder(r.Body).Decode(&metrics); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 	}
+	h.logger.Info("update metrics", zap.Any("metrics", metrics))
 	err := h.service.SetMetricBatch(metrics)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Errorf("failed to update metrics batch: %v", err)
 	}
 
 	w.WriteHeader(http.StatusOK)

@@ -2,78 +2,99 @@ package agent
 
 import (
 	"context"
-	"runtime"
 	"time"
 
 	"go.uber.org/zap"
 )
 
-type MetricsProvider interface {
-	Poll() runtime.MemStats
-}
-
-type MetricsReporter interface {
-	Report(ctx context.Context, metrics Metrics) error
-	WaitServer(ctx context.Context) error
-}
-
-type MetricsStorage interface {
-	UpdateData(memStats runtime.MemStats)
-}
-
 type Agent struct {
 	cfg      *Config
 	provider MetricsProvider
 	reporter MetricsReporter
-	Storage  MetricsStorage
 	logger   *zap.SugaredLogger
 }
 
-func NewAgent(cfg *Config, provider MetricsProvider, reporter MetricsReporter, logger *zap.SugaredLogger, storage MetricsStorage,
+func NewAgent(cfg *Config, provider MetricsProvider, reporter MetricsReporter, logger *zap.SugaredLogger,
 ) *Agent {
 	return &Agent{
 		cfg:      cfg,
 		provider: provider,
 		reporter: reporter,
 		logger:   logger,
-		Storage:  storage,
+	}
+}
+
+func (a *Agent) collectMetrics() []Metrics {
+	var result []Metrics
+
+	runtimeMetrics := a.provider.CollectRuntimeMemStats()
+	runtimeMetrics["PollCount"] = a.provider.NextPollCount()
+	result = append(result, runtimeMetrics)
+
+	gopsutilMetrics, err := a.provider.CollectGopsUtilMetrics()
+	if err == nil {
+		result = append(result, gopsutilMetrics)
+	}
+
+	return result
+}
+
+func (a *Agent) runPoller(ctx context.Context, metricsCh chan Metrics, pollInterval time.Duration) {
+	for {
+		select {
+		case <-ctx.Done():
+			close(metricsCh)
+			return
+		default:
+			metrics := a.collectMetrics()
+			for _, metric := range metrics {
+				metricsCh <- metric
+			}
+
+			if pollInterval > 0 {
+				select {
+				case <-time.After(pollInterval):
+				case <-ctx.Done():
+					close(metricsCh)
+					return
+				}
+			}
+		}
+	}
+}
+
+func (a *Agent) metricsWorker(ctx context.Context, metricsCh <-chan Metrics) {
+	for {
+		select {
+		case metric, ok := <-metricsCh:
+			if !ok {
+				return
+			}
+			a.logger.Info("Sending metrics", zap.Any("metric", metric))
+			if err := a.reporter.Report(ctx, metric); err != nil {
+				a.logger.Info("Sending metrics", zap.Any("metric", metric))
+			}
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
 func (a *Agent) Start(ctx context.Context) error {
-	pollTicker := time.NewTicker(time.Duration(a.cfg.PollInterval) * time.Second)
-	reportTicker := time.NewTicker(time.Duration(a.cfg.ReportInterval) * time.Second)
-	defer pollTicker.Stop()
-	defer reportTicker.Stop()
+	metricsCh := make(chan Metrics, a.cfg.RateLimit*2)
 
 	a.logger.Infof("Agent started")
-	a.logger.Infof("Pool interval %v", a.cfg.PollInterval)
-	a.logger.Infof("Reporting interval %v", a.cfg.ReportInterval)
 
-	err := a.reporter.WaitServer(ctx)
-	if err != nil {
-		a.logger.Fatalf("Can't start agent! Server unreachable %v", err)
+	if err := a.reporter.WaitServer(ctx); err != nil {
+		return err
 	}
 
-	for {
-		select {
-		case <-pollTicker.C:
-			a.Storage.UpdateData(a.provider.Poll())
-			a.logger.Infof("Pool metric")
+	go a.runPoller(ctx, metricsCh, time.Duration(a.cfg.PollInterval)*time.Second)
 
-		case <-reportTicker.C:
-
-			err := a.reporter.Report(ctx, a.Storage.(Metrics))
-			if err != nil {
-				a.logger.Warnw("Failed to report metrics",
-					zap.Reflect("metrics", a.Storage.(Metrics)),
-					zap.Error(err),
-				)
-			}
-			a.logger.Infow("Reported metric", "metric", zap.Reflect("metrics", a.Storage.(Metrics)))
-
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	for i := 0; i < a.cfg.RateLimit; i++ {
+		go a.metricsWorker(ctx, metricsCh)
 	}
+
+	<-ctx.Done()
+	return ctx.Err()
 }

@@ -1,63 +1,78 @@
 package agent_test
 
 import (
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/agent"
-	"runtime"
+	"context"
 	"testing"
+	"time"
+
+	"github.com/fireflg/ago-musthave-metrics-tpl/internal/agent"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
-type fakeProvider struct{}
-
-func (f *fakeProvider) Poll() runtime.MemStats {
-	return runtime.MemStats{Alloc: 100, HeapAlloc: 200}
+// fakeProvider реализует MetricsProvider
+type fakeProvider struct {
+	pollCount int
 }
 
+func (f *fakeProvider) CollectRuntimeMemStats() agent.Metrics {
+	f.pollCount++
+	return agent.Metrics{
+		"Alloc":     100.0,
+		"HeapAlloc": 200.0,
+	}
+}
+
+func (f *fakeProvider) NextPollCount() float64 {
+	return float64(f.pollCount)
+}
+
+func (f *fakeProvider) CollectGopsUtilMetrics() (agent.Metrics, error) {
+	return agent.Metrics{
+		"CPU": 50.0,
+	}, nil
+}
+
+// реализует MetricsReporter
 type fakeReporter struct {
-	Reported map[string]float64
+	Reported []agent.Metrics
 }
 
-func newFakeReporter() *fakeReporter {
-	return &fakeReporter{Reported: make(map[string]float64)}
-}
-
-func (r *fakeReporter) Report(metric string, value float64) error {
-	r.Reported[metric] = value
+func (r *fakeReporter) Report(ctx context.Context, m agent.Metrics) error {
+	r.Reported = append(r.Reported, m)
 	return nil
 }
 
-func TestMetrics_UpdateData(t *testing.T) {
-	storage := agent.Metrics(make(map[string]float64))
-
-	memStats := runtime.MemStats{Alloc: 100, HeapAlloc: 200}
-	storage.UpdateData(memStats)
-
-	if storage["Alloc"] != 100 {
-		t.Fatalf("Alloc = %v, want 100", storage["Alloc"])
-	}
-	if storage["HeapAlloc"] != 200 {
-		t.Fatalf("HeapAlloc = %v, want 200", storage["HeapAlloc"])
-	}
-	if storage["PollCount"] != 1 {
-		t.Fatalf("PollCount = %v, want 1", storage["PollCount"])
-	}
-	if _, ok := storage["RandomValue"]; !ok {
-		t.Fatalf("RandomValue key missing")
-	}
+func (r *fakeReporter) WaitServer(ctx context.Context) error {
+	return nil
 }
 
-func TestReporter(t *testing.T) {
-	storage := agent.Metrics(make(map[string]float64))
-	provider := &fakeProvider{}
-	reporter := newFakeReporter()
-	storage.UpdateData(provider.Poll())
+func newTestLogger() *zap.SugaredLogger {
+	cfg := zap.NewDevelopmentConfig()
+	cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	logger, _ := cfg.Build()
+	return logger.Sugar()
+}
 
-	for metric, value := range storage {
-		if err := reporter.Report(metric, value); err != nil {
-			t.Fatalf("Failed to report metric: %v", err)
-		}
+func TestAgent_Start(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	provider := &fakeProvider{}
+	reporter := &fakeReporter{}
+	logger := newTestLogger()
+	cfg := &agent.Config{
+		PollInterval: 1,
+		RateLimit:    2,
+	}
+	a := agent.NewAgent(cfg, provider, reporter, logger)
+
+	err := a.Start(ctx)
+	if err != context.DeadlineExceeded {
+		t.Errorf("Expected context deadline exceeded, got %v", err)
 	}
 
 	if len(reporter.Reported) == 0 {
-		t.Fatalf("No metrics reported")
+		t.Fatalf("Expected some metrics to be reported, got 0")
 	}
 }

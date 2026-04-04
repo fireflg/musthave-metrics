@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/go-retryablehttp"
@@ -14,19 +17,25 @@ import (
 type Reporter struct {
 	serverURL string
 	client    *retryablehttp.Client
+	secretKey string
 }
 
-func NewReporter(serverURL string) *Reporter {
+type MetricsReporter interface {
+	Report(ctx context.Context, metrics Metrics) error
+	WaitServer(ctx context.Context) error
+}
+
+func NewReporter(serverURL string, secretKey string) *Reporter {
 	client := retryablehttp.NewClient()
 	// Временный хардкод параметров
 	client.RetryMax = 15
 	client.RetryWaitMin = 500 * time.Millisecond
 	client.RetryWaitMax = 3 * time.Second
 	client.Logger = nil
-
 	return &Reporter{
 		serverURL: serverURL,
 		client:    client,
+		secretKey: secretKey,
 	}
 }
 
@@ -49,6 +58,7 @@ func (r *Reporter) WaitServer(ctx context.Context) error {
 }
 
 func (r *Reporter) Report(ctx context.Context, metrics Metrics) error {
+	var hash string
 
 	payload, err := r.makePayload(metrics)
 	if err != nil {
@@ -69,6 +79,15 @@ func (r *Reporter) Report(ctx context.Context, metrics Metrics) error {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
+
+	if len(r.secretKey) > 0 {
+		hash, err = r.signPayload(payload)
+		fmt.Println(hash)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("HashSHA256", hash)
+	}
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -128,4 +147,22 @@ func (r *Reporter) compressPayload(payload []byte) ([]byte, error) {
 	}
 
 	return compressedBuf.Bytes(), nil
+}
+
+func (r *Reporter) signPayload(payload []byte) (string, error) {
+	h := hmac.New(sha256.New, []byte(r.secretKey))
+
+	n, err := h.Write(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to write to hmac: %w", err)
+	}
+
+	if n != len(payload) {
+		return "", fmt.Errorf("partial write to hmac: wrote %d of %d bytes", n, len(payload))
+	}
+	signature := h.Sum(nil)
+
+	signString := hex.EncodeToString(signature)
+
+	return signString, nil
 }

@@ -30,5 +30,7 @@ type MetricsRepository interface {
 	GetGauge(ctx context.Context, name string) (float64, error)
 	SetGauge(ctx context.Context, name string, value float64) error
 	SetMetric(ctx context.Context, metric Metrics) error
+	GetMetric(ctx context.Context, metricID, metricType string) (*Metrics, error)
+	SetMetrics(ctx context.Context, metrics []Metrics) error
 	Ping(ctx context.Context) error
 }

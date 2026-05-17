@@ -1,6 +1,6 @@
 module github.com/fireflg/go-musthave-metrics-tpl
 
-go 1.25.0
+go 1.24
 
 require (
 	github.com/caarlos0/env v3.5.0+incompatible

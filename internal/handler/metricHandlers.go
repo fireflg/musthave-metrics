@@ -16,6 +16,8 @@ import (
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/middleware"
 	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
+	"github.com/go-chi/chi/v5"
+
 	"go.uber.org/zap"
 )
 

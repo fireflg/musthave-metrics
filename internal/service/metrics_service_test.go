@@ -60,7 +60,7 @@ func (m *MockMetricsRepo) Ping(ctx context.Context) error {
 
 func TestSetMetric(t *testing.T) {
 	repo := new(MockMetricsRepo)
-	svc := service.NewMetricsService(repo)
+	svc := service.NewMetricsService(repo, nil)
 
 	delta := int64(10)
 	metricCounter := models.Metrics{
@@ -71,7 +71,7 @@ func TestSetMetric(t *testing.T) {
 
 	repo.On("SetMetric", mock.Anything, metricCounter).Return(nil)
 
-	err := svc.SetMetric(metricCounter)
+	err := svc.SetMetric(context.Background(), metricCounter)
 	assert.NoError(t, err)
 
 	value := 3.14
@@ -83,7 +83,7 @@ func TestSetMetric(t *testing.T) {
 
 	repo.On("SetMetric", mock.Anything, metricGauge).Return(nil)
 
-	err = svc.SetMetric(metricGauge)
+	err = svc.SetMetric(context.Background(), metricGauge)
 	assert.NoError(t, err)
 
 	repo.AssertExpectations(t)
@@ -91,7 +91,7 @@ func TestSetMetric(t *testing.T) {
 
 func TestSetMetricBatch(t *testing.T) {
 	repo := new(MockMetricsRepo)
-	svc := service.NewMetricsService(repo)
+	svc := service.NewMetricsService(repo, nil)
 
 	delta := int64(5)
 	value := 2.71
@@ -102,7 +102,7 @@ func TestSetMetricBatch(t *testing.T) {
 
 	repo.On("SetMetrics", mock.Anything, metrics).Return(nil)
 
-	err := svc.SetMetricBatch(metrics)
+	err := svc.SetMetricBatch(context.Background(), metrics)
 	assert.NoError(t, err)
 
 	repo.AssertExpectations(t)
@@ -110,7 +110,7 @@ func TestSetMetricBatch(t *testing.T) {
 
 func TestGetMetric(t *testing.T) {
 	repo := new(MockMetricsRepo)
-	svc := service.NewMetricsService(repo)
+	svc := service.NewMetricsService(repo, nil)
 
 	delta := int64(42)
 	repo.On("GetMetric", mock.Anything, "counter1", "counter").

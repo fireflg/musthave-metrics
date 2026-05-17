@@ -9,22 +9,28 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/go-retryablehttp"
 	"net/http"
 	"time"
+
+	"github.com/hashicorp/go-retryablehttp"
 )
 
+// Reporter sends metrics to a remote server with retry support.
 type Reporter struct {
 	serverURL string
 	client    *retryablehttp.Client
 	secretKey string
 }
 
+// MetricsReporter defines the interface for sending metrics to a server.
 type MetricsReporter interface {
+	// Report sends a batch of metrics to the server.
 	Report(ctx context.Context, metrics Metrics) error
+	// WaitServer waits for the server to become available.
 	WaitServer(ctx context.Context) error
 }
 
+// NewReporter creates a new Reporter instance.
 func NewReporter(serverURL string, secretKey string) *Reporter {
 	client := retryablehttp.NewClient()
 	// Временный хардкод параметров

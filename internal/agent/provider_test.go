@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/agent"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/agent"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/stretchr/testify/assert"
 )

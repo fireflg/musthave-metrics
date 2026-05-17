@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/agent"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/agent"
 	"go.uber.org/zap"
 	"log"
 	"os"

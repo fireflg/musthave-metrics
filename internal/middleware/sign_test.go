@@ -5,7 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/middleware"
 	"go.uber.org/zap/zaptest"
 	"io"
 	"net/http"

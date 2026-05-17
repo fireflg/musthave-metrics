@@ -1,3 +1,7 @@
+// Package observer provides auditing functionality to track metric changes.
+//
+// The observer can write audit records to a file or send them to a remote URL.
+// This is useful for monitoring and tracking operations on metrics.
 package observer
 
 import (
@@ -10,18 +14,21 @@ import (
 	"time"
 )
 
+// AuditEntry represents a single audit record.
 type AuditEntry struct {
-	TS        int64    `json:"ts"`
-	Metrics   []string `json:"metrics"`
-	IPAddress string   `json:"ip_address"`
+	TS        int64    `json:"ts"`        // Timestamp of the audit event.
+	Metrics   []string `json:"metrics"`   // List of metric IDs that were modified.
+	IPAddress string   `json:"ip_address"` // Client IP address that triggered the event.
 }
 
+// Auditor tracks changes to metrics and records them to a file or URL.
 type Auditor struct {
 	filePath string
 	url      string
 	client   *http.Client
 }
 
+// NewAuditor creates a new Auditor instance.
 func NewAuditor(filePath, url string) *Auditor {
 	return &Auditor{
 		filePath: filePath,

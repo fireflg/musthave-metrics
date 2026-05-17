@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository/memory"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository/memory"
 )
 
 func TestMemoryRepository_SetAndGetGauge(t *testing.T) {

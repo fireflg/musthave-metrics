@@ -2,7 +2,7 @@ package server_test
 
 import (
 	"flag"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/config/server"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/config/server"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"

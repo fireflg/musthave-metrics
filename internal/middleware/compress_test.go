@@ -3,7 +3,7 @@ package middleware_test
 import (
 	"bytes"
 	"compress/gzip"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/middleware"
 	"io"
 	"net/http"
 	"net/http/httptest"

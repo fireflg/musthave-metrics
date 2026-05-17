@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/config/server"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/observer"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/config/server"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/handler"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/observer"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"go.uber.org/zap"
 	"net/http"
 	"os"

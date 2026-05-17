@@ -1,3 +1,9 @@
+// Package agent provides a metrics collection agent that periodically
+// gathers system metrics and reports them to a server.
+//
+// The agent collects runtime memory statistics, CPU utilization,
+// memory usage, and other system metrics, then sends them to
+// a configured server endpoint.
 package agent
 
 import (
@@ -7,6 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// Agent collects and reports system metrics to a remote server.
 type Agent struct {
 	cfg      *Config
 	provider MetricsProvider
@@ -14,6 +21,8 @@ type Agent struct {
 	logger   *zap.SugaredLogger
 }
 
+// NewAgent creates a new Agent instance with the given configuration,
+// metrics provider, reporter, and logger.
 func NewAgent(cfg *Config, provider MetricsProvider, reporter MetricsReporter, logger *zap.SugaredLogger,
 ) *Agent {
 	return &Agent{

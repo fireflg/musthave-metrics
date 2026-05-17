@@ -1,26 +1,46 @@
+// Package handler provides HTTP handlers for metrics operations.
+//
+// The package implements RESTful endpoints for getting and updating
+// metrics (gauges and counters) with support for gzip compression
+// and HMAC signature verification.
 package handler
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strconv"
 
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
-	"github.com/go-chi/chi/v5"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/middleware"
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
+	"go.uber.org/zap"
 )
 
+// MetricsHandler handles HTTP requests for metrics operations.
 type MetricsHandler struct {
 	service   service.MetricsService
 	logger    *zap.SugaredLogger
 	secretKey string
 }
 
+// NewMetricsHandler creates a new MetricsHandler instance.
+func NewMetricsHandler(service service.MetricsService, logger *zap.SugaredLogger) *MetricsHandler {
+	return &MetricsHandler{service: service, logger: logger}
+}
+
+// ServerRouter returns a chi Router with all metric endpoints configured.
+//
+// Endpoints:
+//   - GET / - Health check page
+//   - GET /value/{metricType}/{metricName} - Get metric by type and name
+//   - POST /update/{metricType}/{metricName}/{metricValue} - Update single metric
+//   - POST /update/ - Update metric via JSON body
+//   - POST /updates/ - Batch update metrics via JSON body
+//   - POST /value/ - Get metric via JSON body
+//   - GET /ping - Database health check
 func (h *MetricsHandler) ServerRouter() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.WithLogging(h.logger))
@@ -38,10 +58,6 @@ func (h *MetricsHandler) ServerRouter() chi.Router {
 	r.Post("/value/", middleware.GzipMiddleware(h.GetMetricJSON))
 	r.Get("/ping", h.CheckDB)
 	return r
-}
-
-func NewMetricsHandler(service service.MetricsService, logger *zap.SugaredLogger) *MetricsHandler {
-	return &MetricsHandler{service: service, logger: logger}
 }
 
 func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {

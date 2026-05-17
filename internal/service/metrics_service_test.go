@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

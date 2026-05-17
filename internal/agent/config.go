@@ -3,18 +3,21 @@ package agent
 import (
 	"flag"
 	"fmt"
-	"github.com/caarlos0/env"
 	"strings"
+
+	"github.com/caarlos0/env"
 )
 
+// Config holds agent configuration parameters.
 type Config struct {
-	ServerURL      string `env:"ADDRESS" envDefault:"http://localhost:8080"`
-	PollInterval   int    `env:"POLL_INTERVAL" envDefault:"0"`
-	ReportInterval int    `env:"REPORT_INTERVAL" envDefault:"10"`
-	SecretKey      string `env:"KEY" envDefault:""`
-	RateLimit      int    `env:"RATE_LIMIT" envDefault:"3"`
+	ServerURL      string `env:"ADDRESS" envDefault:"http://localhost:8080"` // ServerURL is the server endpoint to report metrics to.
+	PollInterval   int    `env:"POLL_INTERVAL" envDefault:"0"`               // PollInterval is the interval in seconds to collect metrics.
+	ReportInterval int    `env:"REPORT_INTERVAL" envDefault:"10"`             // ReportInterval is the interval in seconds to report metrics.
+	SecretKey      string `env:"KEY" envDefault:""`                           // SecretKey is the HMAC key for request signing.
+	RateLimit      int    `env:"RATE_LIMIT" envDefault:"3"`                  // RateLimit is the number of concurrent reporters.
 }
 
+// LoadAgentConfig loads agent configuration from environment variables and flags.
 func LoadAgentConfig() (*Config, error) {
 	var cfg Config
 

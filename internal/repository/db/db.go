@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"log"

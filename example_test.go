@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/handler"
-	"github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"go.uber.org/zap"
 )
@@ -66,17 +67,26 @@ func Example_updateCounterMetric() {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
-	defer resp.Body.Close()
+	resp.Body.Close()
 
 	// Update again to see accumulation
-	http.Post(
+	resp2, err := http.Post(
 		fmt.Sprintf("%s/update/counter/requests/1", server.URL),
 		"text/plain",
 		nil,
 	)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	resp2.Body.Close()
 
 	// Get the counter value
-	resp, _ = http.Get(fmt.Sprintf("%s/value/counter/requests", server.URL))
+	resp, err = http.Get(fmt.Sprintf("%s/value/counter/requests", server.URL))
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
 	defer resp.Body.Close()
 
 	buf := new(bytes.Buffer)
@@ -99,15 +109,21 @@ func Example_getMetricJSON() {
 		Value: func() *float64 { v := 75.5; return &v }(),
 	}
 	body, _ := json.Marshal(metric)
-	http.Post(
+	resp, err := http.Post(
 		fmt.Sprintf("%s/update/", server.URL),
 		"application/json",
 		bytes.NewReader(body),
 	)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
 
 	// Then retrieve it via JSON
 	body, _ = json.Marshal(models.Metrics{ID: "cpu_usage", MType: "gauge"})
-	resp, err := http.Post(
+	resp, err = http.Post(
 		fmt.Sprintf("%s/value/", server.URL),
 		"application/json",
 		bytes.NewReader(body),
@@ -160,14 +176,20 @@ func Example_getMetricPlain() {
 	defer server.Close()
 
 	// Set a gauge value first
-	http.Post(
+	resp, err := http.Post(
 		fmt.Sprintf("%s/update/gauge/temperature/25.5", server.URL),
 		"text/plain",
 		nil,
 	)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
 
 	// Get the value
-	resp, err := http.Get(fmt.Sprintf("%s/value/gauge/temperature", server.URL))
+	resp, err = http.Get(fmt.Sprintf("%s/value/gauge/temperature", server.URL))
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -272,11 +294,15 @@ func Example_signedRequest() {
 	// and add header: HashSHA256: <hex-encoded-signature>
 	// For testing without signature, omit the header
 
-	req, _ := http.NewRequest(
+	req, err := http.NewRequest(
 		"POST",
 		fmt.Sprintf("%s/update/", server.URL),
 		bytes.NewReader(body),
 	)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
@@ -305,15 +331,21 @@ func Example_parseMetricResponse() {
 		Value: func() *float64 { v := 42.0; return &v }(),
 	}
 	body, _ := json.Marshal(metric)
-	http.Post(
+	resp, err := http.Post(
 		fmt.Sprintf("%s/update/", server.URL),
 		"application/json",
 		bytes.NewReader(body),
 	)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
 
 	// Request the metric back
 	requestBody, _ := json.Marshal(models.Metrics{ID: "parse_test", MType: "gauge"})
-	resp, err := http.Post(
+	resp, err = http.Post(
 		fmt.Sprintf("%s/value/", server.URL),
 		"application/json",
 		bytes.NewReader(requestBody),
@@ -341,11 +373,15 @@ func Example_errorHandling() {
 
 	// Try to get a non-existent metric
 	requestBody, _ := json.Marshal(models.Metrics{ID: "nonexistent", MType: "gauge"})
-	resp, _ := http.Post(
+	resp, err := http.Post(
 		fmt.Sprintf("%s/value/", server.URL),
 		"application/json",
 		bytes.NewReader(requestBody),
 	)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
@@ -365,15 +401,25 @@ func Example_workWithCounters() {
 
 	// Increment counter multiple times
 	for i := 0; i < 3; i++ {
-		http.Post(
+		resp, err := http.Post(
 			fmt.Sprintf("%s/update/counter/hits/1", server.URL),
 			"text/plain",
 			nil,
 		)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
 	}
 
 	// Get final counter value
-	resp, _ := http.Get(fmt.Sprintf("%s/value/counter/hits", server.URL))
+	resp, err := http.Get(fmt.Sprintf("%s/value/counter/hits", server.URL))
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
 	defer resp.Body.Close()
 
 	buf := new(bytes.Buffer)

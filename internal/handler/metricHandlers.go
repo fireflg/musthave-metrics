@@ -21,6 +21,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// contextKey is a custom type to avoid collisions in context values.
+type contextKey string
+
+const clientIPKey contextKey = "client_ip"
+
 // MetricsHandler handles HTTP requests for metrics operations.
 type MetricsHandler struct {
 	service   service.MetricsService
@@ -135,7 +140,7 @@ func (h *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 
 	ip := r.RemoteAddr
 
-	ctx := context.WithValue(r.Context(), "client_ip", ip)
+	ctx := context.WithValue(r.Context(), clientIPKey, ip)
 
 	if err := h.service.SetMetric(ctx, metric); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -159,7 +164,7 @@ func (h *MetricsHandler) UpdateMetricJSON(w http.ResponseWriter, r *http.Request
 
 	ip := r.RemoteAddr
 
-	ctx := context.WithValue(r.Context(), "client_ip", ip)
+	ctx := context.WithValue(r.Context(), clientIPKey, ip)
 
 	err := h.service.SetMetric(ctx, metric)
 	if err != nil {
@@ -222,7 +227,7 @@ func (h *MetricsHandler) UpdateMetricJSONBatch(w http.ResponseWriter, r *http.Re
 
 	ip := r.RemoteAddr
 
-	ctx := context.WithValue(r.Context(), "client_ip", ip)
+	ctx := context.WithValue(r.Context(), clientIPKey, ip)
 
 	err := h.service.SetMetricBatch(ctx, metrics)
 

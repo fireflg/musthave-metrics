@@ -12,8 +12,8 @@ import (
 type Config struct {
 	ServerURL      string `env:"ADDRESS" envDefault:"http://localhost:8080"` // ServerURL is the server endpoint to report metrics to.
 	PollInterval   int    `env:"POLL_INTERVAL" envDefault:"0"`               // PollInterval is the interval in seconds to collect metrics.
-	ReportInterval int    `env:"REPORT_INTERVAL" envDefault:"10"`             // ReportInterval is the interval in seconds to report metrics.
-	SecretKey      string `env:"KEY" envDefault:""`                           // SecretKey is the HMAC key for request signing.
+	ReportInterval int    `env:"REPORT_INTERVAL" envDefault:"10"`            // ReportInterval is the interval in seconds to report metrics.
+	SecretKey      string `env:"KEY" envDefault:""`                          // SecretKey is the HMAC key for request signing.
 	RateLimit      int    `env:"RATE_LIMIT" envDefault:"3"`                  // RateLimit is the number of concurrent reporters.
 }
 

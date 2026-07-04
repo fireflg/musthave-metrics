@@ -59,6 +59,8 @@ func (m *MockMetricsRepo) Ping(ctx context.Context) error {
 }
 
 func TestSetMetric(t *testing.T) {
+	t.Parallel()
+
 	repo := new(MockMetricsRepo)
 	svc := service.NewMetricsService(repo, nil)
 
@@ -71,7 +73,7 @@ func TestSetMetric(t *testing.T) {
 
 	repo.On("SetMetric", mock.Anything, metricCounter).Return(nil)
 
-	err := svc.SetMetric(context.Background(), metricCounter)
+	err := svc.SetMetric(t.Context(), metricCounter)
 	assert.NoError(t, err)
 
 	value := 3.14
@@ -83,13 +85,15 @@ func TestSetMetric(t *testing.T) {
 
 	repo.On("SetMetric", mock.Anything, metricGauge).Return(nil)
 
-	err = svc.SetMetric(context.Background(), metricGauge)
+	err = svc.SetMetric(t.Context(), metricGauge)
 	assert.NoError(t, err)
 
 	repo.AssertExpectations(t)
 }
 
 func TestSetMetricBatch(t *testing.T) {
+	t.Parallel()
+
 	repo := new(MockMetricsRepo)
 	svc := service.NewMetricsService(repo, nil)
 
@@ -102,7 +106,7 @@ func TestSetMetricBatch(t *testing.T) {
 
 	repo.On("SetMetrics", mock.Anything, metrics).Return(nil)
 
-	err := svc.SetMetricBatch(context.Background(), metrics)
+	err := svc.SetMetricBatch(t.Context(), metrics)
 	assert.NoError(t, err)
 
 	repo.AssertExpectations(t)

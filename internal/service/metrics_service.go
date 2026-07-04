@@ -9,7 +9,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/fireflg/go-musthave-metrics-tpl/internal/config/server"
 	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/observer"
 
@@ -32,16 +31,15 @@ type MetricsService interface {
 // and optional observer for change notifications.
 type MetricsServiceImpl struct {
 	repo     models.MetricsRepository
-	Cfg      *server.Config
-	observer *observer.Auditor
+	observer observer.Observers
 }
 
 // Verify MetricsServiceImpl implements MetricsService interface.
 var _ MetricsService = (*MetricsServiceImpl)(nil)
 
 // NewMetricsService creates a new MetricsService instance.
-func NewMetricsService(repo models.MetricsRepository, auditor *observer.Auditor) MetricsService {
-	return &MetricsServiceImpl{repo: repo, observer: auditor}
+func NewMetricsService(repo models.MetricsRepository, observers observer.Observers) MetricsService {
+	return &MetricsServiceImpl{repo: repo, observer: observers}
 }
 
 func (m *MetricsServiceImpl) SetMetric(ctx context.Context, metric models.Metrics) error {

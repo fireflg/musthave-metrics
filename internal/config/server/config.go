@@ -10,14 +10,14 @@ import (
 
 // Config holds server configuration parameters.
 type Config struct {
-	RunAddr                   string `env:"ADDRESS" envDefault:":8080"`                   // RunAddr is the server address and port.
-	PersistentStorageInterval int    `env:"STORAGE_INTERVAL" envDefault:"0"`               // PersistentStorageInterval is the interval for periodic storage saves (0 for sync).
-	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"metrics.json"`   // PersistentStoragePath is the path to the metrics storage file.
-	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`                    // PersistentStorageRestore indicates whether to restore metrics on startup.
-	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`                    // DatabaseDSN is the database connection string.
-	HashKey                   string `env:"HASH_KEY" envDefault:""`                        // HashKey is the HMAC key for request signature verification.
-	AuditFile                 string `env:"AUDIT_FILE" envDefault:""`                      // AuditFile is the path to the audit log file.
-	AuditURL                  string `env:"AUDIT_URL" envDefault:""`                       // AuditURL is the URL to send audit logs to.
+	RunAddr                   string `env:"ADDRESS" envDefault:":8080"`                  // RunAddr is the server address and port.
+	PersistentStorageInterval int    `env:"STORAGE_INTERVAL" envDefault:"0"`             // PersistentStorageInterval is the interval for periodic storage saves (0 for sync).
+	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"metrics.json"` // PersistentStoragePath is the path to the metrics storage file.
+	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`                  // PersistentStorageRestore indicates whether to restore metrics on startup.
+	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`                  // DatabaseDSN is the database connection string.
+	HashKey                   string `env:"HASH_KEY" envDefault:""`                      // HashKey is the HMAC key for request signature verification.
+	AuditFile                 string `env:"AUDIT_FILE" envDefault:""`                    // AuditFile is the path to the audit log file.
+	AuditURL                  string `env:"AUDIT_URL" envDefault:""`                     // AuditURL is the URL to send audit logs to.
 	StorageMode               string // StorageMode is the active storage type (db, file, memory).
 }
 

@@ -11,22 +11,22 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-// Provider collects system and runtime metrics.
+// Provider собирает системные метрики и метрики runtime.
 type Provider struct {
 	count int64
 }
 
-// MetricsProvider defines the interface for collecting metrics.
+// MetricsProvider определяет интерфейс для сбора метрик.
 type MetricsProvider interface {
-	// CollectRuntimeMemStats returns runtime memory statistics.
+	// CollectRuntimeMemStats возвращает статистику памяти runtime.
 	CollectRuntimeMemStats() Metrics
-	// NextPollCount returns the next poll count value.
+	// NextPollCount возвращает следующее значение счетчика опросов.
 	NextPollCount() float64
-	// CollectGopsUtilMetrics returns system metrics using gopsutil.
+	// CollectGopsUtilMetrics возвращает системные метрики с помощью gopsutil.
 	CollectGopsUtilMetrics() (Metrics, error)
 }
 
-// Metrics is a map of metric names to their float64 values.
+// Metrics — карта имен метрик к их значениям float64.
 type Metrics map[string]float64
 
 func (p *Provider) NextPollCount() float64 {

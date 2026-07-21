@@ -12,10 +12,12 @@ import (
 	"time"
 )
 
+// PostgresRepository — репозиторий метрик с хранением в PostgreSQL.
 type PostgresRepository struct {
 	DB *sql.DB
 }
 
+// NewPostgresRepository создает новый PostgresRepository.
 func NewPostgresRepository(dsn string) models.MetricsRepository {
 	db, _ := sql.Open("pgx", dsn)
 

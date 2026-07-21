@@ -15,22 +15,22 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 )
 
-// Reporter sends metrics to a remote server with retry support.
+// Reporter отправляет метрики на удаленный сервер с поддержкой ретраев.
 type Reporter struct {
 	serverURL string
 	client    *retryablehttp.Client
 	secretKey string
 }
 
-// MetricsReporter defines the interface for sending metrics to a server.
+// MetricsReporter определяет интерфейс для отправки метрик на сервер.
 type MetricsReporter interface {
-	// Report sends a batch of metrics to the server.
+	// Report отправляет набор метрик на сервер.
 	Report(ctx context.Context, metrics Metrics) error
-	// WaitServer waits for the server to become available.
+	// WaitServer ожидает доступности сервера.
 	WaitServer(ctx context.Context) error
 }
 
-// NewReporter creates a new Reporter instance.
+// NewReporter создает новый экземпляр Reporter.
 func NewReporter(serverURL string, secretKey string) *Reporter {
 	client := retryablehttp.NewClient()
 	// Временный хардкод параметров

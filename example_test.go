@@ -11,30 +11,30 @@ import (
 
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/handler"
 	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository/memory"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"go.uber.org/zap"
 )
 
-// This file contains examples of how to use the metrics server endpoints.
-// Run the server first, then use these examples to interact with it.
+// Файл содержит примеры использования эндпоинтов сервера метрик.
 //
-// The server provides the following endpoints:
-//   - GET / - Health check page
-//   - GET /value/{metricType}/{metricName} - Get metric by type and name
-//   - POST /update/{metricType}/{metricName}/{metricValue} - Update metric via URL
-//   - POST /update/ - Update metric via JSON body
-//   - POST /updates/ - Batch update metrics via JSON body
-//   - POST /value/ - Get metric via JSON body
-//   - GET /ping - Database health check
+// Сервер предоставляет следующие эндпоинты:
+//   - GET / - Страница проверки здоровья
+//   - GET /value/{metricType}/{metricName} - Получить метрику по типу и имени
+//   - POST /update/{metricType}/{metricName}/{metricValue} - Обновить метрику через URL
+//   - POST /update/ - Обновить метрику через JSON тело
+//   - POST /updates/ - Пакетное обновление метрик через JSON
+//   - POST /value/ - Получить метрику через JSON тело
+//   - GET /ping - Проверка здоровья базы данных
 
 func Example_updateGaugeMetric() {
-	// Example: Update a gauge metric via URL
+
 	// POST /update/gauge/memory_usage/1024.5
 
 	server := createTestServer()
 	defer server.Close()
 
-	// Update a gauge metric
+	// Обновляем gauge метрику
 	resp, err := http.Post(
 		fmt.Sprintf("%s/update/gauge/memory_usage/1024.5", server.URL),
 		"text/plain",
@@ -51,13 +51,13 @@ func Example_updateGaugeMetric() {
 }
 
 func Example_updateCounterMetric() {
-	// Example: Update a counter metric via URL
+
 	// POST /update/counter/requests/1
 
 	server := createTestServer()
 	defer server.Close()
 
-	// Update a counter metric (counter values accumulate)
+	// Обновляем counter метрику (значения накапливаются)
 	resp, err := http.Post(
 		fmt.Sprintf("%s/update/counter/requests/1", server.URL),
 		"text/plain",
@@ -69,7 +69,7 @@ func Example_updateCounterMetric() {
 	}
 	resp.Body.Close()
 
-	// Update again to see accumulation
+	// Обновляем снова, чтобы увидеть накопление
 	resp2, err := http.Post(
 		fmt.Sprintf("%s/update/counter/requests/1", server.URL),
 		"text/plain",
@@ -81,7 +81,7 @@ func Example_updateCounterMetric() {
 	}
 	resp2.Body.Close()
 
-	// Get the counter value
+	// Получаем значение счетчика
 	resp, err = http.Get(fmt.Sprintf("%s/value/counter/requests", server.URL))
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -96,13 +96,13 @@ func Example_updateCounterMetric() {
 }
 
 func Example_getMetricJSON() {
-	// Example: Get metric via JSON request
-	// POST /value/ with JSON body
+
+	// POST /value/ с JSON телом
 
 	server := createTestServer()
 	defer server.Close()
 
-	// First, set a metric
+	// Сначала устанавливаем метрику
 	metric := models.Metrics{
 		ID:    "cpu_usage",
 		MType: models.Gauge,
@@ -121,7 +121,7 @@ func Example_getMetricJSON() {
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 
-	// Then retrieve it via JSON
+	// Затем получаем её через JSON
 	body, _ = json.Marshal(models.Metrics{ID: "cpu_usage", MType: "gauge"})
 	resp, err = http.Post(
 		fmt.Sprintf("%s/value/", server.URL),
@@ -141,8 +141,8 @@ func Example_getMetricJSON() {
 }
 
 func Example_batchUpdateMetrics() {
-	// Example: Batch update multiple metrics
-	// POST /updates/ with JSON array
+
+	// POST /updates/ с JSON массивом
 
 	server := createTestServer()
 	defer server.Close()
@@ -169,13 +169,13 @@ func Example_batchUpdateMetrics() {
 }
 
 func Example_getMetricPlain() {
-	// Example: Get metric by type and name
+
 	// GET /value/gauge/temperature
 
 	server := createTestServer()
 	defer server.Close()
 
-	// Set a gauge value first
+	// Сначала устанавливаем значение gauge
 	resp, err := http.Post(
 		fmt.Sprintf("%s/update/gauge/temperature/25.5", server.URL),
 		"text/plain",
@@ -188,7 +188,7 @@ func Example_getMetricPlain() {
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 
-	// Get the value
+	// Получаем значение
 	resp, err = http.Get(fmt.Sprintf("%s/value/gauge/temperature", server.URL))
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -203,7 +203,7 @@ func Example_getMetricPlain() {
 }
 
 func Example_pingDatabase() {
-	// Example: Check database connectivity
+
 	// GET /ping
 
 	server := createTestServer()
@@ -224,30 +224,29 @@ func Example_pingDatabase() {
 	// Output: Database: OK
 }
 
-// Helper function to create a test server instance
+// createTestServer создает тестовый сервер с in-memory репозиторием.
 func createTestServer() *httptest.Server {
 	logger, _ := zap.NewDevelopment()
 	sugar := logger.Sugar()
 
-	// Create in-memory repository
-	repo := service.NewMetricsService(nil, nil)
+	repo := memory.NewMemoryRepository()
+	svc := service.NewMetricsService(repo, nil)
 
-	// Create handler with the service
-	h := handler.NewMetricsHandler(repo, sugar)
+	h := handler.NewMetricsHandler(svc, sugar)
 	r := h.ServerRouter()
 
 	return httptest.NewServer(r)
 }
 
-// Example_gzipCompressedRequest demonstrates sending compressed requests
+// Example_gzipCompressedRequest демонстрирует отправку сжатых запросов
 func Example_gzipCompressedRequest() {
-	// Example: Send gzip compressed request
-	// The server accepts gzip-encoded request bodies
+
+	// Сервер принимает gzip-encoded тела запросов
 
 	server := createTestServer()
 	defer server.Close()
 
-	// Create JSON payload
+	// Создаем JSON payload
 	metric := models.Metrics{
 		ID:    "compressed_metric",
 		MType: models.Gauge,
@@ -255,10 +254,10 @@ func Example_gzipCompressedRequest() {
 	}
 	body, _ := json.Marshal(metric)
 
-	// Create gzip compressed reader
+	// Создаем gzip сжатый reader
 	var _ bytes.Buffer
-	// Note: In production, use gzip.NewWriter(&buf)
-	// For this example, we send regular JSON
+	// Примечание: в продакшене используйте gzip.NewWriter(&buf)
+	// В этом примере отправляем обычный JSON
 	resp, err := http.Post(
 		fmt.Sprintf("%s/update/", server.URL),
 		"application/json",
@@ -274,25 +273,19 @@ func Example_gzipCompressedRequest() {
 	// Output: Status: 200
 }
 
-// Example_signedRequest demonstrates HMAC-signed requests
+// Example_signedRequest демонстрирует HMAC-подписанные запросы
 func Example_signedRequest() {
-	// Example: Send request with HMAC signature
-	// Requires setting HASH_KEY environment variable or -k flag
 
 	server := createTestServer()
 	defer server.Close()
 
-	// Create JSON payload
+	// Создаем JSON payload
 	metric := models.Metrics{
 		ID:    "signed_metric",
 		MType: models.Gauge,
 		Value: func() *float64 { v := 99.9; return &v }(),
 	}
 	body, _ := json.Marshal(metric)
-
-	// In production, compute HMAC-SHA256 of body with secret key
-	// and add header: HashSHA256: <hex-encoded-signature>
-	// For testing without signature, omit the header
 
 	req, err := http.NewRequest(
 		"POST",
@@ -314,17 +307,14 @@ func Example_signedRequest() {
 	defer resp.Body.Close()
 
 	fmt.Printf("Status: %d\n", resp.StatusCode)
-	// Output: Status: 200
 }
 
-// Example_parseMetricResponse demonstrates parsing metric responses
+// Example_parseMetricResponse демонстрирует разбор ответов метрик
 func Example_parseMetricResponse() {
-	// Example: Parse JSON response from /value/ endpoint
 
 	server := createTestServer()
 	defer server.Close()
 
-	// Set a metric first
 	metric := models.Metrics{
 		ID:    "parse_test",
 		MType: models.Gauge,
@@ -343,7 +333,6 @@ func Example_parseMetricResponse() {
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 
-	// Request the metric back
 	requestBody, _ := json.Marshal(models.Metrics{ID: "parse_test", MType: "gauge"})
 	resp, err = http.Post(
 		fmt.Sprintf("%s/value/", server.URL),
@@ -364,14 +353,13 @@ func Example_parseMetricResponse() {
 	// Output: ID: parse_test, Type: gauge, Value: 42.0
 }
 
-// Example_errorHandling demonstrates handling error responses
+// Example_errorHandling демонстрирует обработку ошибок
 func Example_errorHandling() {
-	// Example: Handle error responses from the server
 
 	server := createTestServer()
 	defer server.Close()
 
-	// Try to get a non-existent metric
+	// Пробуем получить несуществующую метрику
 	requestBody, _ := json.Marshal(models.Metrics{ID: "nonexistent", MType: "gauge"})
 	resp, err := http.Post(
 		fmt.Sprintf("%s/value/", server.URL),
@@ -392,14 +380,13 @@ func Example_errorHandling() {
 	// Output: Metric not found
 }
 
-// Example_workWithCounters demonstrates counter accumulation
+// Example_workWithCounters демонстрирует накопление счетчиков
 func Example_workWithCounters() {
-	// Example: Counters accumulate over time
 
 	server := createTestServer()
 	defer server.Close()
 
-	// Increment counter multiple times
+	// Увеличиваем счетчик несколько раз
 	for i := 0; i < 3; i++ {
 		resp, err := http.Post(
 			fmt.Sprintf("%s/update/counter/hits/1", server.URL),
@@ -414,7 +401,7 @@ func Example_workWithCounters() {
 		resp.Body.Close()
 	}
 
-	// Get final counter value
+	// Получаем итоговое значение счетчика
 	resp, err := http.Get(fmt.Sprintf("%s/value/counter/hits", server.URL))
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)

@@ -1,8 +1,8 @@
-// Package handler provides HTTP handlers for metrics operations.
+// Package handler предоставляет HTTP обработчики для операций с метриками.
 //
-// The package implements RESTful endpoints for getting and updating
-// metrics (gauges and counters) with support for gzip compression
-// and HMAC signature verification.
+// Пакет реализует RESTful эндпоинты для получения и обновления
+// метрик (gauges и counters) с поддержкой gzip сжатия
+// и проверки HMAC подписи.
 package handler
 
 import (
@@ -21,33 +21,33 @@ import (
 	"go.uber.org/zap"
 )
 
-// contextKey is a custom type to avoid collisions in context values.
+// contextKey — пользовательский тип для избежания коллизий в значениях контекста.
 type contextKey string
 
 const clientIPKey contextKey = "client_ip"
 
-// MetricsHandler handles HTTP requests for metrics operations.
+// MetricsHandler обрабатывает HTTP запросы для операций с метриками.
 type MetricsHandler struct {
 	service   service.MetricsService
 	logger    *zap.SugaredLogger
 	secretKey string
 }
 
-// NewMetricsHandler creates a new MetricsHandler instance.
+// NewMetricsHandler создает новый экземпляр MetricsHandler.
 func NewMetricsHandler(service service.MetricsService, logger *zap.SugaredLogger) *MetricsHandler {
 	return &MetricsHandler{service: service, logger: logger}
 }
 
-// ServerRouter returns a chi Router with all metric endpoints configured.
+// ServerRouter возвращает chi Router со всеми настроенными эндпоинтами метрик.
 //
-// Endpoints:
-//   - GET / - Health check page
-//   - GET /value/{metricType}/{metricName} - Get metric by type and name
-//   - POST /update/{metricType}/{metricName}/{metricValue} - Update single metric
-//   - POST /update/ - Update metric via JSON body
-//   - POST /updates/ - Batch update metrics via JSON body
-//   - POST /value/ - Get metric via JSON body
-//   - GET /ping - Database health check
+// Эндпоинты:
+//   - GET / - Страница проверки здоровья
+//   - GET /value/{metricType}/{metricName} - Получить метрику по типу и имени
+//   - POST /update/{metricType}/{metricName}/{metricValue} - Обновить одну метрику
+//   - POST /update/ - Обновить метрику через JSON тело
+//   - POST /updates/ - Пакетное обновление метрик через JSON
+//   - POST /value/ - Получить метрику через JSON тело
+//   - GET /ping - Проверка здоровья базы данных
 func (h *MetricsHandler) ServerRouter() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.WithLogging(h.logger))

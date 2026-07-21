@@ -1,8 +1,8 @@
-// Package service provides business logic for metrics management.
+// Package service предоставляет бизнес-логику для управления метриками.
 //
-// The service layer coordinates between HTTP handlers and data repositories,
-// providing methods to get and set metrics with support for observers that
-// can track changes.
+// Уровень сервиса координирует работу между HTTP обработчиками и репозиториями данных,
+// предоставляя методы для получения и установки метрик с поддержкой наблюдателей для
+// отслеживания изменений.
 package service
 
 import (

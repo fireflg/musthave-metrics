@@ -1,9 +1,9 @@
-// Package agent provides a metrics collection agent that periodically
-// gathers system metrics and reports them to a server.
+// Package agent предоставляет агент сбора метрик, который периодически
+// собирает системные метрики и отправляет их на сервер.
 //
-// The agent collects runtime memory statistics, CPU utilization,
-// memory usage, and other system metrics, then sends them to
-// a configured server endpoint.
+// Агент собирает статистику использования памяти runtime, CPU,
+// использование памяти и другие системные метрики, затем отправляет их
+// на настроенный эндпоинт сервера.
 package agent
 
 import (
@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Agent collects and reports system metrics to a remote server.
+// Agent собирает и отправляет системные метрики на удаленный сервер.
 type Agent struct {
 	cfg      *Config
 	provider MetricsProvider
@@ -21,8 +21,8 @@ type Agent struct {
 	logger   *zap.SugaredLogger
 }
 
-// NewAgent creates a new Agent instance with the given configuration,
-// metrics provider, reporter, and logger.
+// NewAgent создает новый экземпляр Agent с заданной конфигурацией,
+// провайдером метрик, репортером и логгером.
 func NewAgent(cfg *Config, provider MetricsProvider, reporter MetricsReporter, logger *zap.SugaredLogger,
 ) *Agent {
 	return &Agent{
@@ -89,6 +89,7 @@ func (a *Agent) metricsWorker(ctx context.Context, metricsCh <-chan Metrics) {
 	}
 }
 
+// Start запускает агент сбора метрик.
 func (a *Agent) Start(ctx context.Context) error {
 	metricsCh := make(chan Metrics, a.cfg.RateLimit*2)
 

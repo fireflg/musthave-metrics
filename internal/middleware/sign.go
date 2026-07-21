@@ -11,10 +11,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// SignMiddleware is HTTP middleware for HMAC signature verification.
-// It verifies the HashSHA256 header against the request body using
-// the provided secret key. If no secret key is provided, requests
-// are processed without verification.
+// SignMiddleware — HTTP мидлвар для проверки HMAC подписи.
+// Проверяет заголовок HashSHA256 против тела запроса с использованием
+// предоставленного секретного ключа. Если секретный ключ не предоставлен,
+// запросы обрабатываются без проверки.
 func SignMiddleware(h http.HandlerFunc, secretKey string, logger *zap.SugaredLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if secretKey != "" {

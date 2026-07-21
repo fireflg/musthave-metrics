@@ -1,7 +1,7 @@
-// Package repository provides data storage implementations for metrics.
+// Package repository предоставляет реализации хранилища данных для метрик.
 //
-// The package implements the repository pattern to support different
-// storage backends: memory, file, and PostgreSQL database.
+// Пакет реализует паттерн репозитория для поддержки различных
+// бэкендов хранения: memory, file и PostgreSQL база данных.
 package repository
 
 import (
@@ -14,18 +14,18 @@ import (
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository/memory"
 )
 
-// StorageType represents the type of storage backend.
+// StorageType представляет тип бэкенда хранения.
 type StorageType string
 
-// Storage type constants.
+// Константы типов хранилища.
 const (
-	StorageTypePostgres StorageType = "db"     // PostgreSQL database storage.
-	StorageTypeMemory   StorageType = "memory" // In-memory storage.
-	StorageTypeFile     StorageType = "file"   // File-based storage.
+	StorageTypePostgres StorageType = "db"     // Хранилище в PostgreSQL базе данных.
+	StorageTypeMemory   StorageType = "memory" // Хранилище в памяти.
+	StorageTypeFile     StorageType = "file"   // Файловый бэкенд.
 )
 
-// NewRepository creates a new repository instance based on the configuration.
-// Returns an error if the storage mode is invalid.
+// NewRepository создает новый экземпляр репозитория на основе конфигурации.
+// Возвращает ошибку, если режим хранилища невалиден.
 func NewRepository(cfg server.Config) (models.MetricsRepository, error) {
 	switch cfg.StorageMode {
 	case string(StorageTypePostgres):

@@ -1,4 +1,4 @@
-// Package server provides server configuration for the metrics service.
+// Package server предоставляет конфигурацию сервера для сервиса метрик.
 package server
 
 import (
@@ -8,20 +8,20 @@ import (
 	"github.com/caarlos0/env"
 )
 
-// Config holds server configuration parameters.
+// Config содержит параметры конфигурации сервера.
 type Config struct {
-	RunAddr                   string `env:"ADDRESS" envDefault:":8080"`                  // RunAddr is the server address and port.
-	PersistentStorageInterval int    `env:"STORAGE_INTERVAL" envDefault:"0"`             // PersistentStorageInterval is the interval for periodic storage saves (0 for sync).
-	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"metrics.json"` // PersistentStoragePath is the path to the metrics storage file.
-	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`                  // PersistentStorageRestore indicates whether to restore metrics on startup.
-	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`                  // DatabaseDSN is the database connection string.
-	HashKey                   string `env:"HASH_KEY" envDefault:""`                      // HashKey is the HMAC key for request signature verification.
-	AuditFile                 string `env:"AUDIT_FILE" envDefault:""`                    // AuditFile is the path to the audit log file.
-	AuditURL                  string `env:"AUDIT_URL" envDefault:""`                     // AuditURL is the URL to send audit logs to.
-	StorageMode               string // StorageMode is the active storage type (db, file, memory).
+	RunAddr                   string `env:"ADDRESS" envDefault:":8080"`                  // RunAddr — адрес и порт сервера.
+	PersistentStorageInterval int    `env:"STORAGE_INTERVAL" envDefault:"0"`             // PersistentStorageInterval — интервал периодического сохранения (0 для синхронного).
+	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"metrics.json"` // PersistentStoragePath — путь к файлу хранения метрик.
+	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`                  // PersistentStorageRestore — флаг восстановления метрик при старте.
+	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`                  // DatabaseDSN — строка подключения к базе данных.
+	HashKey                   string `env:"HASH_KEY" envDefault:""`                      // HashKey — HMAC ключ для проверки подписи запросов.
+	AuditFile                 string `env:"AUDIT_FILE" envDefault:""`                    // AuditFile — путь к файлу аудита.
+	AuditURL                  string `env:"AUDIT_URL" envDefault:""`                     // AuditURL — URL для отправки логов аудита.
+	StorageMode               string // StorageMode — активный тип хранилища (db, file, memory).
 }
 
-// LoadAServerConfig loads server configuration from environment variables and flags.
+// LoadAServerConfig загружает конфигурацию сервера из переменных окружения и флагов.
 func LoadAServerConfig() (*Config, error) {
 	var cfg Config
 

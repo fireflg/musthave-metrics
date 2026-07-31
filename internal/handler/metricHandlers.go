@@ -1,25 +1,53 @@
+// Package handler предоставляет HTTP обработчики для операций с метриками.
+//
+// Пакет реализует RESTful эндпоинты для получения и обновления
+// метрик (gauges и counters) с поддержкой gzip сжатия
+// и проверки HMAC подписи.
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/middleware"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strconv"
 
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/middleware"
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"github.com/go-chi/chi/v5"
+
+	"go.uber.org/zap"
 )
 
+// contextKey — пользовательский тип для избежания коллизий в значениях контекста.
+type contextKey string
+
+const clientIPKey contextKey = "client_ip"
+
+// MetricsHandler обрабатывает HTTP запросы для операций с метриками.
 type MetricsHandler struct {
 	service   service.MetricsService
 	logger    *zap.SugaredLogger
 	secretKey string
 }
 
+// NewMetricsHandler создает новый экземпляр MetricsHandler.
+func NewMetricsHandler(service service.MetricsService, logger *zap.SugaredLogger) *MetricsHandler {
+	return &MetricsHandler{service: service, logger: logger}
+}
+
+// ServerRouter возвращает chi Router со всеми настроенными эндпоинтами метрик.
+//
+// Эндпоинты:
+//   - GET / - Страница проверки здоровья
+//   - GET /value/{metricType}/{metricName} - Получить метрику по типу и имени
+//   - POST /update/{metricType}/{metricName}/{metricValue} - Обновить одну метрику
+//   - POST /update/ - Обновить метрику через JSON тело
+//   - POST /updates/ - Пакетное обновление метрик через JSON
+//   - POST /value/ - Получить метрику через JSON тело
+//   - GET /ping - Проверка здоровья базы данных
 func (h *MetricsHandler) ServerRouter() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.WithLogging(h.logger))
@@ -37,10 +65,6 @@ func (h *MetricsHandler) ServerRouter() chi.Router {
 	r.Post("/value/", middleware.GzipMiddleware(h.GetMetricJSON))
 	r.Get("/ping", h.CheckDB)
 	return r
-}
-
-func NewMetricsHandler(service service.MetricsService, logger *zap.SugaredLogger) *MetricsHandler {
-	return &MetricsHandler{service: service, logger: logger}
 }
 
 func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +137,12 @@ func (h *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 		}
 		metric.Delta = &intValue
 	}
-	if err := h.service.SetMetric(metric); err != nil {
+
+	ip := r.RemoteAddr
+
+	ctx := context.WithValue(r.Context(), clientIPKey, ip)
+
+	if err := h.service.SetMetric(ctx, metric); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -133,7 +162,11 @@ func (h *MetricsHandler) UpdateMetricJSON(w http.ResponseWriter, r *http.Request
 
 	h.logger.Infof("update metric %s type %s value %d, delta %d", metric.ID, metric.MType, metric.Value, metric.Delta)
 
-	err := h.service.SetMetric(metric)
+	ip := r.RemoteAddr
+
+	ctx := context.WithValue(r.Context(), clientIPKey, ip)
+
+	err := h.service.SetMetric(ctx, metric)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		h.logger.Errorf("failed to update metric %s: %v", metric.ID, err)
@@ -191,7 +224,13 @@ func (h *MetricsHandler) UpdateMetricJSONBatch(w http.ResponseWriter, r *http.Re
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	h.logger.Info("update metrics", zap.Any("metrics", metrics))
-	err := h.service.SetMetricBatch(metrics)
+
+	ip := r.RemoteAddr
+
+	ctx := context.WithValue(r.Context(), clientIPKey, ip)
+
+	err := h.service.SetMetricBatch(ctx, metrics)
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		h.logger.Errorf("failed to update metrics batch: %v", err)

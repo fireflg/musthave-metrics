@@ -7,11 +7,13 @@ import (
 	"strings"
 )
 
+// compressWriter оборачивает http.ResponseWriter для gzip сжатия ответа.
 type compressWriter struct {
 	w  http.ResponseWriter
 	zw *gzip.Writer
 }
 
+// newCompressWriter создает новый экземпляр compressWriter.
 func newCompressWriter(w http.ResponseWriter) *compressWriter {
 	return &compressWriter{
 		w:  w,
@@ -42,6 +44,7 @@ func (c *compressWriter) Close() error {
 	return c.zw.Close()
 }
 
+// compressReader оборачивает io.ReadCloser для распаковки gzip-encoded тела запроса.
 type compressReader struct {
 	r  io.ReadCloser
 	zr *gzip.Reader
@@ -70,6 +73,9 @@ func (c *compressReader) Close() error {
 	return c.zr.Close()
 }
 
+// GzipMiddleware — HTTP мидлвар для gzip сжатия.
+// Сжимает ответы, когда клиент принимает gzip кодирование,
+// и распаковывает gzip-encoded тела запросов.
 func GzipMiddleware(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ow := w

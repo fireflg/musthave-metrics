@@ -5,17 +5,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"log"
 	"time"
 )
 
+// PostgresRepository — репозиторий метрик с хранением в PostgreSQL.
 type PostgresRepository struct {
 	DB *sql.DB
 }
 
+// NewPostgresRepository создает новый PostgresRepository.
 func NewPostgresRepository(dsn string) models.MetricsRepository {
 	db, _ := sql.Open("pgx", dsn)
 

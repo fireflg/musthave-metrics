@@ -1,20 +1,20 @@
-module github.com/fireflg/ago-musthave-metrics-tpl
+module github.com/fireflg/go-musthave-metrics-tpl
 
-go 1.24.11
+go 1.25.0
 
 require (
-	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/caarlos0/env v3.5.0+incompatible
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/hashicorp/go-retryablehttp v0.7.8
-	github.com/jackc/pgx/v5 v5.7.6
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/shirou/gopsutil/v4 v4.25.12
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.1
 )
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.9.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect

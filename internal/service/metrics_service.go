@@ -1,45 +1,77 @@
+// Package service предоставляет бизнес-логику для управления метриками.
+//
+// Уровень сервиса координирует работу между HTTP обработчиками и репозиториями данных,
+// предоставляя методы для получения и установки метрик с поддержкой наблюдателей для
+// отслеживания изменений.
 package service
 
 import (
 	"context"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/config/server"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"time"
+
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/observer"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+// MetricsService defines the interface for metrics business operations.
 type MetricsService interface {
-	SetMetric(metric models.Metrics) error
-	SetMetricBatch(metrics []models.Metrics) error
+	// SetMetric stores a single metric.
+	SetMetric(ctx context.Context, metric models.Metrics) error
+	// SetMetricBatch stores multiple metrics in one operation.
+	SetMetricBatch(ctx context.Context, metrics []models.Metrics) error
+	// GetMetric retrieves a metric by its ID and type.
 	GetMetric(metricID, metricType string) (*models.Metrics, error)
+	// CheckRepository verifies the repository is accessible.
 	CheckRepository() error
 }
+
+// MetricsServiceImpl implements MetricsService with repository storage
+// and optional observer for change notifications.
 type MetricsServiceImpl struct {
-	repo models.MetricsRepository
-	Cfg  *server.Config
+	repo     models.MetricsRepository
+	observer observer.Observers
 }
 
+// Verify MetricsServiceImpl implements MetricsService interface.
 var _ MetricsService = (*MetricsServiceImpl)(nil)
 
-func NewMetricsService(repo models.MetricsRepository) MetricsService {
-	return &MetricsServiceImpl{repo: repo}
+// NewMetricsService creates a new MetricsService instance.
+func NewMetricsService(repo models.MetricsRepository, observers observer.Observers) MetricsService {
+	return &MetricsServiceImpl{repo: repo, observer: observers}
 }
 
-func (m *MetricsServiceImpl) SetMetric(metric models.Metrics) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+func (m *MetricsServiceImpl) SetMetric(ctx context.Context, metric models.Metrics) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+
 	defer cancel()
 	if err := m.repo.SetMetric(ctx, metric); err != nil {
 		return err
 	}
+
+	if m.observer != nil {
+		m.observer.Notify(ctx, metric.ID)
+	}
+
 	return nil
 }
 
-func (m *MetricsServiceImpl) SetMetricBatch(metrics []models.Metrics) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+func (m *MetricsServiceImpl) SetMetricBatch(ctx context.Context, metrics []models.Metrics) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	if err := m.repo.SetMetrics(ctx, metrics); err != nil {
 		return err
 	}
+
+	if m.observer != nil {
+		ids := make([]string, len(metrics))
+		for i, m := range metrics {
+			ids[i] = m.ID
+		}
+		m.observer.NotifyBatch(ctx, ids)
+	}
+
 	return nil
 }
 

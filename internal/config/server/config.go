@@ -1,21 +1,27 @@
+// Package server предоставляет конфигурацию сервера для сервиса метрик.
 package server
 
 import (
 	"flag"
 	"fmt"
+
 	"github.com/caarlos0/env"
 )
 
+// Config содержит параметры конфигурации сервера.
 type Config struct {
-	RunAddr                   string `env:"ADDRESS" envDefault:":8080"`
-	PersistentStorageInterval int    `env:"STORAGE_INTERVAL" envDefault:"0"`
-	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"metrics.json"`
-	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`
-	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`
-	HashKey                   string `env:"HASH_KEY" envDefault:""`
-	StorageMode               string
+	RunAddr                   string `env:"ADDRESS" envDefault:":8080"`                  // RunAddr — адрес и порт сервера.
+	PersistentStorageInterval int    `env:"STORAGE_INTERVAL" envDefault:"0"`             // PersistentStorageInterval — интервал периодического сохранения (0 для синхронного).
+	PersistentStoragePath     string `env:"FILE_STORAGE_PATH" envDefault:"metrics.json"` // PersistentStoragePath — путь к файлу хранения метрик.
+	PersistentStorageRestore  bool   `env:"RESTORE" envDefault:"false"`                  // PersistentStorageRestore — флаг восстановления метрик при старте.
+	DatabaseDSN               string `env:"DATABASE_DSN" envDefault:""`                  // DatabaseDSN — строка подключения к базе данных.
+	HashKey                   string `env:"HASH_KEY" envDefault:""`                      // HashKey — HMAC ключ для проверки подписи запросов.
+	AuditFile                 string `env:"AUDIT_FILE" envDefault:""`                    // AuditFile — путь к файлу аудита.
+	AuditURL                  string `env:"AUDIT_URL" envDefault:""`                     // AuditURL — URL для отправки логов аудита.
+	StorageMode               string // StorageMode — активный тип хранилища (db, file, memory).
 }
 
+// LoadAServerConfig загружает конфигурацию сервера из переменных окружения и флагов.
 func LoadAServerConfig() (*Config, error) {
 	var cfg Config
 
@@ -30,6 +36,8 @@ func LoadAServerConfig() (*Config, error) {
 	flag.BoolVar(&cfg.PersistentStorageRestore, "r", cfg.PersistentStorageRestore, "Whether to restore metrics")
 	flag.StringVar(&cfg.DatabaseDSN, "d", cfg.DatabaseDSN, "Database connection string")
 	flag.StringVar(&cfg.HashKey, "k", cfg.HashKey, "Hash key")
+	flag.StringVar(&cfg.AuditFile, "audit-file", cfg.AuditFile, "Path to audit log file")
+	flag.StringVar(&cfg.AuditURL, "audit-url", cfg.AuditURL, "URL to send audit logs")
 	flag.Parse()
 
 	if unknownFlags := flag.Args(); len(unknownFlags) > 0 {

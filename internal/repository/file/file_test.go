@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository/file"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository/file"
 )
 
 func TestFileRepository_SetAndGetGauge(t *testing.T) {

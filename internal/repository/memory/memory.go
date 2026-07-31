@@ -4,15 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
 	"sync"
+
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
 )
 
+// MemoryRepository is an in-memory implementation of MetricsRepository.
+// It stores metrics in a thread-safe map.
 type MemoryRepository struct {
 	Metrics map[string]models.Metrics
 	mu      sync.Mutex
 }
 
+// NewMemoryRepository creates a new in-memory repository.
 func NewMemoryRepository() models.MetricsRepository {
 	return &MemoryRepository{
 		Metrics: make(map[string]models.Metrics),

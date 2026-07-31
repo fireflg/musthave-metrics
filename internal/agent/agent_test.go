@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/agent"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/agent"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/config/server"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/handler"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/config/server"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/handler"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/observer"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"go.uber.org/zap"
 	"net/http"
 	"os"
@@ -32,7 +33,16 @@ func main() {
 		logger.Fatal("Failed to initialize repository", zap.Error(err))
 	}
 
-	metricsService := service.NewMetricsService(repo)
+	var observers observer.Observers
+	if cfg.AuditFile != "" || cfg.AuditURL != "" {
+		observers, err = observer.NewObservers(cfg.AuditFile, cfg.AuditURL)
+		if err != nil {
+			logger.Fatal("Failed to initialize observer", zap.Error(err))
+		}
+		sugar.Infow("Audit enabled", "file", cfg.AuditFile, "url", cfg.AuditURL)
+	}
+
+	metricsService := service.NewMetricsService(repo, observers)
 	metricsHandler := handler.NewMetricsHandler(metricsService, logger.Sugar())
 	r := metricsHandler.ServerRouter()
 
@@ -70,6 +80,12 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("server shutdown failed", zap.Error(err))
+	}
+
+	if observers != nil {
+		if err := observers.Close(); err != nil {
+			logger.Error("observer shutdown failed", zap.Error(err))
+		}
 	}
 
 	logger.Info("Shutdown complete")

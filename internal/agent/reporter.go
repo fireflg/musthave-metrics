@@ -9,22 +9,28 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/go-retryablehttp"
 	"net/http"
 	"time"
+
+	"github.com/hashicorp/go-retryablehttp"
 )
 
+// Reporter отправляет метрики на удаленный сервер с поддержкой ретраев.
 type Reporter struct {
 	serverURL string
 	client    *retryablehttp.Client
 	secretKey string
 }
 
+// MetricsReporter определяет интерфейс для отправки метрик на сервер.
 type MetricsReporter interface {
+	// Report отправляет набор метрик на сервер.
 	Report(ctx context.Context, metrics Metrics) error
+	// WaitServer ожидает доступности сервера.
 	WaitServer(ctx context.Context) error
 }
 
+// NewReporter создает новый экземпляр Reporter.
 func NewReporter(serverURL string, secretKey string) *Reporter {
 	client := retryablehttp.NewClient()
 	// Временный хардкод параметров
@@ -82,7 +88,6 @@ func (r *Reporter) Report(ctx context.Context, metrics Metrics) error {
 
 	if len(r.secretKey) > 0 {
 		hash, err = r.signPayload(payload)
-		fmt.Println(hash)
 		if err != nil {
 			return err
 		}

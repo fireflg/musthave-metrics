@@ -5,11 +5,16 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
+// SignMiddleware — HTTP мидлвар для проверки HMAC подписи.
+// Проверяет заголовок HashSHA256 против тела запроса с использованием
+// предоставленного секретного ключа. Если секретный ключ не предоставлен,
+// запросы обрабатываются без проверки.
 func SignMiddleware(h http.HandlerFunc, secretKey string, logger *zap.SugaredLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if secretKey != "" {

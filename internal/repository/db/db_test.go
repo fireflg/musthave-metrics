@@ -2,12 +2,12 @@ package db_test
 
 import (
 	"context"
+	"github.com/DATA-DOG/go-sqlmock"
 	"regexp"
 	"testing"
 
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository/db"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository/db"
 	"github.com/stretchr/testify/assert"
 )
 

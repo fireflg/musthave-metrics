@@ -2,24 +2,31 @@ package agent
 
 import (
 	"fmt"
-	"github.com/shirou/gopsutil/v4/cpu"
-	"github.com/shirou/gopsutil/v4/mem"
 	"math/rand"
 	"reflect"
 	"runtime"
 	"sync/atomic"
+
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/mem"
 )
 
+// Provider собирает системные метрики и метрики runtime.
 type Provider struct {
 	count int64
 }
 
+// MetricsProvider определяет интерфейс для сбора метрик.
 type MetricsProvider interface {
+	// CollectRuntimeMemStats возвращает статистику памяти runtime.
 	CollectRuntimeMemStats() Metrics
+	// NextPollCount возвращает следующее значение счетчика опросов.
 	NextPollCount() float64
+	// CollectGopsUtilMetrics возвращает системные метрики с помощью gopsutil.
 	CollectGopsUtilMetrics() (Metrics, error)
 }
 
+// Metrics — карта имен метрик к их значениям float64.
 type Metrics map[string]float64
 
 func (p *Provider) NextPollCount() float64 {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/repository/memory"
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository/memory"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+// FileRepository — файловый репозиторий метрик.
+// Сохраняет метрики в файл на диске с поддержкой периодического сохранения.
 type FileRepository struct {
 	storageInterval int
 	storageRestore  bool
@@ -21,6 +23,7 @@ type FileRepository struct {
 	mu sync.Mutex
 }
 
+// NewFileRepository создает новый FileRepository.
 func NewFileRepository(
 	storagePath string,
 	storageInterval int,
@@ -108,10 +111,12 @@ func (f *FileRepository) GetMetric(ctx context.Context, metricID, metricType str
 	}
 	return metric, nil
 }
+
 func (f *FileRepository) Ping(ctx context.Context) error {
 	return f.MemoryRepository.Ping(ctx)
 }
 
+// InitStorage инициализирует хранилище — восстанавливает метрики и запускает периодическое сохранение.
 func (f *FileRepository) InitStorage() error {
 	if f.storageRestore {
 		if err := f.RestoreMetrics(); err != nil {
@@ -135,6 +140,7 @@ func (f *FileRepository) startPeriodicSave() {
 	}
 }
 
+// StoreMetrics сохраняет все метрики в файл.
 func (f *FileRepository) StoreMetrics() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -157,6 +163,7 @@ func (f *FileRepository) StoreMetrics() error {
 	return nil
 }
 
+// RestoreMetrics восстанавливает метрики из файла.
 func (f *FileRepository) RestoreMetrics() error {
 	ctx := context.Background()
 	if f.storagePath == "" {

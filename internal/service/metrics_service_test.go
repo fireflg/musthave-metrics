@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	models "github.com/fireflg/ago-musthave-metrics-tpl/internal/model"
-	"github.com/fireflg/ago-musthave-metrics-tpl/internal/service"
+	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -59,8 +59,10 @@ func (m *MockMetricsRepo) Ping(ctx context.Context) error {
 }
 
 func TestSetMetric(t *testing.T) {
+	t.Parallel()
+
 	repo := new(MockMetricsRepo)
-	svc := service.NewMetricsService(repo)
+	svc := service.NewMetricsService(repo, nil)
 
 	delta := int64(10)
 	metricCounter := models.Metrics{
@@ -71,7 +73,7 @@ func TestSetMetric(t *testing.T) {
 
 	repo.On("SetMetric", mock.Anything, metricCounter).Return(nil)
 
-	err := svc.SetMetric(metricCounter)
+	err := svc.SetMetric(t.Context(), metricCounter)
 	assert.NoError(t, err)
 
 	value := 3.14
@@ -83,15 +85,17 @@ func TestSetMetric(t *testing.T) {
 
 	repo.On("SetMetric", mock.Anything, metricGauge).Return(nil)
 
-	err = svc.SetMetric(metricGauge)
+	err = svc.SetMetric(t.Context(), metricGauge)
 	assert.NoError(t, err)
 
 	repo.AssertExpectations(t)
 }
 
 func TestSetMetricBatch(t *testing.T) {
+	t.Parallel()
+
 	repo := new(MockMetricsRepo)
-	svc := service.NewMetricsService(repo)
+	svc := service.NewMetricsService(repo, nil)
 
 	delta := int64(5)
 	value := 2.71
@@ -102,7 +106,7 @@ func TestSetMetricBatch(t *testing.T) {
 
 	repo.On("SetMetrics", mock.Anything, metrics).Return(nil)
 
-	err := svc.SetMetricBatch(metrics)
+	err := svc.SetMetricBatch(t.Context(), metrics)
 	assert.NoError(t, err)
 
 	repo.AssertExpectations(t)
@@ -110,7 +114,7 @@ func TestSetMetricBatch(t *testing.T) {
 
 func TestGetMetric(t *testing.T) {
 	repo := new(MockMetricsRepo)
-	svc := service.NewMetricsService(repo)
+	svc := service.NewMetricsService(repo, nil)
 
 	delta := int64(42)
 	repo.On("GetMetric", mock.Anything, "counter1", "counter").

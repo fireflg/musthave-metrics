@@ -8,6 +8,7 @@ import (
 )
 
 func BenchmarkSetGauge(b *testing.B) {
+	b.StopTimer()
 	repo := memory.NewMemoryRepository()
 	ctx := b.Context()
 	var i int64
@@ -19,6 +20,7 @@ func BenchmarkSetGauge(b *testing.B) {
 }
 
 func BenchmarkSetCounter(b *testing.B) {
+	b.StopTimer()
 	repo := memory.NewMemoryRepository()
 	ctx := b.Context()
 	var i int64
@@ -30,12 +32,14 @@ func BenchmarkSetCounter(b *testing.B) {
 }
 
 func BenchmarkGetGauge(b *testing.B) {
+	b.StopTimer()
 	repo := memory.NewMemoryRepository()
 	ctx := b.Context()
 
 	for i := 0; i < 100; i++ {
 		repo.SetGauge(ctx, "gauge_metric", float64(i))
 	}
+	b.StartTimer()
 
 	for b.Loop() {
 		repo.GetGauge(ctx, "gauge_metric")
@@ -43,12 +47,14 @@ func BenchmarkGetGauge(b *testing.B) {
 }
 
 func BenchmarkGetCounter(b *testing.B) {
+	b.StopTimer()
 	repo := memory.NewMemoryRepository()
 	ctx := b.Context()
 
 	for i := 0; i < 100; i++ {
 		repo.SetCounter(ctx, "counter_metric", int64(i))
 	}
+	b.StartTimer()
 
 	for b.Loop() {
 		repo.GetCounter(ctx, "counter_metric")
@@ -56,6 +62,7 @@ func BenchmarkGetCounter(b *testing.B) {
 }
 
 func BenchmarkSetMetric_Gauge(b *testing.B) {
+	b.StopTimer()
 	repo := memory.NewMemoryRepository()
 	ctx := b.Context()
 	var i int64
@@ -68,6 +75,7 @@ func BenchmarkSetMetric_Gauge(b *testing.B) {
 }
 
 func BenchmarkSetMetric_Counter(b *testing.B) {
+	b.StopTimer()
 	repo := memory.NewMemoryRepository()
 	ctx := b.Context()
 	var i int64

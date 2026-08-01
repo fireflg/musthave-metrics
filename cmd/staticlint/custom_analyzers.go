@@ -51,15 +51,14 @@ func (v *osExitCallVisitor) visit(node ast.Node) bool {
 		return true
 	case *ast.CallExpr:
 		if v.isMain {
-			if ident, ok := n.Fun.(*ast.Ident); ok {
-				if ident.Name == "Exit" {
-					v.pass.Reportf(n.Pos(), "os.Exit() is not allowed in main, use log.Fatalf or return with error code")
-				}
-			}
 			if sel, ok := n.Fun.(*ast.SelectorExpr); ok {
 				if ident, ok := sel.X.(*ast.Ident); ok {
-					if ident.Name == "os" && sel.Sel.Name == "Exit" {
-						v.pass.Reportf(n.Pos(), "os.Exit() is not allowed in main, use log.Fatalf or return with error code")
+					if obj, ok := v.pass.TypesInfo.Uses[ident]; ok {
+						if pkgName, ok := obj.(*types.PkgName); ok {
+							if pkgName.Imported().Path() == "os" && sel.Sel.Name == "Exit" {
+								v.pass.Reportf(n.Pos(), "os.Exit() is not allowed in main, use log.Fatalf or return with error code")
+							}
+						}
 					}
 				}
 			}
@@ -119,10 +118,19 @@ func kindOf(n *ast.ValueSpec) string {
 }
 
 func runNaming(pass *analysis.Pass) (interface{}, error) {
+	pascalRE, err := regexp.Compile(`^[A-Z][a-zA-Z0-9]*$`)
+	if err != nil {
+		return nil, err
+	}
+	camelRE, err := regexp.Compile(`^[a-z][a-zA-Z0-9]*$`)
+	if err != nil {
+		return nil, err
+	}
+
 	v := &namingVisitor{
 		pass:     pass,
-		pascalRE: regexp.MustCompile(`^[A-Z][a-zA-Z0-9]*$`),
-		camelRE:  regexp.MustCompile(`^[a-z][a-zA-Z0-9]*$`),
+		pascalRE: pascalRE,
+		camelRE:  camelRE,
 	}
 
 	for _, f := range pass.Files {

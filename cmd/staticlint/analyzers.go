@@ -64,19 +64,19 @@ func Analyzers() []*analysis.Analyzer {
 	}
 
 	for _, a := range staticcheck.Analyzers {
-		if len(a.Analyzer.Name) >= 3 && a.Analyzer.Name[:3] == "SA*" {
+		if len(a.Analyzer.Name) >= 2 && a.Analyzer.Name[:2] == "SA" {
 			analyzers = append(analyzers, a.Analyzer)
 		}
 	}
 
 	for _, a := range staticcheck.Analyzers {
-		if len(a.Analyzer.Name) >= 3 && a.Analyzer.Name[:3] == "ST*" {
+		if len(a.Analyzer.Name) >= 2 && a.Analyzer.Name[:2] == "ST" {
 			analyzers = append(analyzers, a.Analyzer)
 		}
 	}
 
 	for _, a := range staticcheck.Analyzers {
-		if len(a.Analyzer.Name) >= 2 && a.Analyzer.Name[:1] == "V" {
+		if len(a.Analyzer.Name) >= 1 && a.Analyzer.Name[:1] == "V" {
 			analyzers = append(analyzers, a.Analyzer)
 		}
 	}

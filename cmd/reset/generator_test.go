@@ -426,7 +426,7 @@ func TestGenerateResetMethodBody(t *testing.T) {
 	structs := gen.FindMarkedStructs()
 	require.Len(t, structs, 1)
 
-	code, err := gen.generateResetMethodBody(structs[0])
+	code, err := gen.GenerateResetMethod(structs[0])
 	require.NoError(t, err)
 
 	content := string(code)

@@ -7,62 +7,28 @@ type Resetter interface {
 	Reset()
 }
 
-// Pool — пул объектов с generic-параметром.
+// Pool — обобщённая версия sync.Pool с ограничением T Resetter.
 type Pool[T Resetter] struct {
-	objects chan T
+	pool sync.Pool
 }
 
-// New создаёт и возвращает указатель на новый пул объектов.
-func New[T Resetter](size int) *Pool[T] {
-	return &Pool[T]{
-		objects: make(chan T, size),
-	}
+// New создаёт и возвращает указатель на новый пул.
+func New[T Resetter]() *Pool[T] {
+	return &Pool[T]{}
 }
 
-// Get возвращает объект из пула.
+// Get возвращает объект из пула. Если пул пуст, возвращает нулевое значение T.
 func (p *Pool[T]) Get() T {
-	select {
-	case obj := <-p.objects:
-		return obj
-	default:
+	obj, ok := p.pool.Get().(T)
+	if !ok {
 		var zero T
 		return zero
 	}
+	return obj
 }
 
-// Put помещает объект обратно в пул.
+// Put помещает объект обратно в пул, предварительно сбрасывая его состояние.
 func (p *Pool[T]) Put(obj T) {
-	select {
-	case p.objects <- obj:
-	default:
-	}
-}
-
-// PoolMT — потокобезопасная версия пула.
-type PoolMT[T Resetter] struct {
-	pool Pool[T]
-	mu   sync.Mutex
-}
-
-// NewMT создаёт и возвращает указатель на потокобезопасный пул.
-func NewMT[T Resetter](size int) *PoolMT[T] {
-	return &PoolMT[T]{
-		pool: Pool[T]{
-			objects: make(chan T, size),
-		},
-	}
-}
-
-// Get возвращает объект из пула в потокобезопасном режиме.
-func (p *PoolMT[T]) Get() T {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.pool.Get()
-}
-
-// Put помещает объект в пул в потокобезопасном режиме.
-func (p *PoolMT[T]) Put(obj T) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	obj.Reset()
 	p.pool.Put(obj)
 }

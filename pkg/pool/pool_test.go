@@ -18,14 +18,14 @@ func (t testObject) Reset() {
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject](10)
+	p := New[testObject]()
 	assert.NotNil(t, p)
 }
 
 func TestPool_Get_Put(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject](3)
+	p := New[testObject]()
 
 	obj := testObject{Value: 42}
 	p.Put(obj)
@@ -37,39 +37,17 @@ func TestPool_Get_Put(t *testing.T) {
 func TestPool_Get_Empty(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject](3)
+	p := New[testObject]()
 
 	got := p.Get()
 	// Проверяем zero value
 	assert.Equal(t, 0, got.Value)
 }
 
-func TestPool_Put_Full(t *testing.T) {
-	t.Parallel()
-
-	p := New[testObject](2)
-
-	p.Put(testObject{Value: 1})
-	p.Put(testObject{Value: 2})
-	p.Put(testObject{Value: 3})
-
-	count := 0
-	for {
-		select {
-		case <-p.objects:
-			count++
-		default:
-			goto done
-		}
-	}
-done:
-	assert.Equal(t, 2, count)
-}
-
 func TestPool_ObjectLifecycle(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject](3)
+	p := New[testObject]()
 
 	obj := testObject{Value: 100}
 	p.Put(obj)
@@ -84,17 +62,10 @@ func TestPool_ObjectLifecycle(t *testing.T) {
 	assert.Equal(t, 0, got2.Value)
 }
 
-func TestNewMT(t *testing.T) {
+func TestPool_Concurrent(t *testing.T) {
 	t.Parallel()
 
-	p := NewMT[testObject](10)
-	assert.NotNil(t, p)
-}
-
-func TestPoolMT_Concurrent(t *testing.T) {
-	t.Parallel()
-
-	p := NewMT[testObject](100)
+	p := New[testObject]()
 
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
@@ -112,27 +83,6 @@ func TestPoolMT_Concurrent(t *testing.T) {
 	}
 
 	wg.Wait()
-}
-
-func TestPoolMT_Get(t *testing.T) {
-	t.Parallel()
-
-	p := NewMT[testObject](3)
-
-	obj := testObject{Value: 42}
-	p.Put(obj)
-
-	got := p.Get()
-	assert.Equal(t, 42, got.Value)
-}
-
-func TestPoolMT_Get_Empty(t *testing.T) {
-	t.Parallel()
-
-	p := NewMT[testObject](3)
-
-	got := p.Get()
-	assert.Equal(t, 0, got.Value)
 }
 
 func TestPool_PointerType(t *testing.T) {

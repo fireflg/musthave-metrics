@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/agent"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/buildinfo"
 	"go.uber.org/zap"
 	"log"
 	"os"
@@ -12,6 +13,8 @@ import (
 )
 
 func main() {
+	buildinfo.Print()
+
 	l, err := zap.NewDevelopment()
 	if err != nil {
 		log.Fatalf("can't initialize zap logger: %v", err)

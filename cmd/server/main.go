@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/buildinfo"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/config/server"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/handler"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/observer"
@@ -16,6 +17,8 @@ import (
 )
 
 func main() {
+	buildinfo.Print()
+
 	logger, err := zap.NewProduction()
 	if err != nil {
 		panic("failed to initialize logger: " + err.Error())

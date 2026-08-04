@@ -29,3 +29,4 @@ metricstest
 metrics.json
 docker-compose.yml
 test.json
+./reset

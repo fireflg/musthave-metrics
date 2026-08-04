@@ -20,7 +20,8 @@ type FileRepository struct {
 	storageRestore  bool
 	storagePath     string
 	memory.MemoryRepository
-	mu sync.Mutex
+	mu     sync.Mutex
+	stopCh chan struct{}
 }
 
 // NewFileRepository создает новый FileRepository.
@@ -124,6 +125,7 @@ func (f *FileRepository) InitStorage() error {
 		}
 	}
 	if f.storageInterval > 0 {
+		f.stopCh = make(chan struct{})
 		go f.startPeriodicSave()
 	}
 	return nil
@@ -133,11 +135,25 @@ func (f *FileRepository) startPeriodicSave() {
 	ticker := time.NewTicker(time.Duration(f.storageInterval) * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if err := f.StoreMetrics(); err != nil {
+	for {
+		select {
+		case <-ticker.C:
+			if err := f.StoreMetrics(); err != nil {
+				return
+			}
+		case <-f.stopCh:
 			return
 		}
 	}
+}
+
+// Close останавливает периодическое сохранение и выполняет финальный сброс
+// накопленных метрик на диск.
+func (f *FileRepository) Close() error {
+	if f.stopCh != nil {
+		close(f.stopCh)
+	}
+	return f.StoreMetrics()
 }
 
 // StoreMetrics сохраняет все метрики в файл.

@@ -14,33 +14,6 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-func TestDecryptMiddleware_NoKey(t *testing.T) {
-	logger := zaptest.NewLogger(t).Sugar()
-	body := []byte("plain body")
-
-	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBuffer(body))
-	rr := httptest.NewRecorder()
-
-	called := false
-	h := middleware.DecryptMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		data, _ := io.ReadAll(r.Body)
-		if string(data) != string(body) {
-			t.Fatalf("expected body %s, got %s", body, data)
-		}
-		w.WriteHeader(http.StatusOK)
-	}, nil, logger)
-
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d", rr.Code)
-	}
-	if !called {
-		t.Fatal("expected handler to be called")
-	}
-}
-
 func TestDecryptMiddleware_ValidCiphertext(t *testing.T) {
 	logger := zaptest.NewLogger(t).Sugar()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

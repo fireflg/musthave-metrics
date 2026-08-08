@@ -62,11 +62,21 @@ func (h *MetricsHandler) ServerRouter() chi.Router {
 
 	r.Get("/value/{metricType}/{metricName}", h.GetMetric)
 	r.Post("/update/{metricType}/{metricName}/{metricValue}", middleware.SignMiddleware(h.UpdateMetric, h.secretKey, h.logger))
-	r.Post("/update/", middleware.DecryptMiddleware(middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSON, h.secretKey, h.logger)), h.cryptoKey, h.logger))
-	r.Post("/updates/", middleware.DecryptMiddleware(middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSONBatch, h.secretKey, h.logger)), h.cryptoKey, h.logger))
+	r.Post("/update/", h.withDecryption(middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSON, h.secretKey, h.logger))))
+	r.Post("/updates/", h.withDecryption(middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSONBatch, h.secretKey, h.logger))))
 	r.Post("/value/", middleware.GzipMiddleware(h.GetMetricJSON))
 	r.Get("/ping", h.CheckDB)
 	return r
+}
+
+// withDecryption оборачивает обработчик в DecryptMiddleware только если для
+// сервера задан приватный ключ — иначе шифрование не используется и
+// запрос обрабатывается без изменений.
+func (h *MetricsHandler) withDecryption(next http.HandlerFunc) http.HandlerFunc {
+	if h.cryptoKey == nil {
+		return next
+	}
+	return middleware.DecryptMiddleware(next, h.cryptoKey, h.logger)
 }
 
 func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {

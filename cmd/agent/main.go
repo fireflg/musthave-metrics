@@ -41,8 +41,12 @@ func main() {
 
 	agent := agent.NewAgent(cfg, &provider, reporter, logger)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT,
+	)
+	defer stop()
 
 	done := make(chan struct{})
 	go func() {
@@ -52,12 +56,9 @@ func main() {
 		}
 	}()
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
-	<-stop
+	<-ctx.Done()
 
 	logger.Info("Starting graceful shutdown...")
-	cancel()
 
 	<-done
 	logger.Info("Shutdown complete")

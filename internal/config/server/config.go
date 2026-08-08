@@ -5,34 +5,31 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
-	"github.com/caarlos0/env"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/config/fileconfig"
+	"github.com/spf13/viper"
 )
 
 // Config содержит параметры конфигурации сервера.
 type Config struct {
-	RunAddr                   string // RunAddr — адрес и порт сервера. env: ADDRESS, флаг: -a.
-	PersistentStorageInterval int    // PersistentStorageInterval — интервал периодического сохранения в секундах (0 для синхронного). env: STORE_INTERVAL, флаг: -i.
-	PersistentStoragePath     string // PersistentStoragePath — путь к файлу хранения метрик. env: STORE_FILE, флаг: -f.
-	PersistentStorageRestore  bool   // PersistentStorageRestore — флаг восстановления метрик при старте. env: RESTORE, флаг: -r.
-	DatabaseDSN               string // DatabaseDSN — строка подключения к базе данных. env: DATABASE_DSN, флаг: -d.
-	HashKey                   string `env:"HASH_KEY" envDefault:""`   // HashKey — HMAC ключ для проверки подписи запросов.
-	AuditFile                 string `env:"AUDIT_FILE" envDefault:""` // AuditFile — путь к файлу аудита.
-	AuditURL                  string `env:"AUDIT_URL" envDefault:""`  // AuditURL — URL для отправки логов аудита.
-	CryptoKeyPath             string // CryptoKeyPath — путь к файлу с приватным ключом для расшифровки запросов. env: CRYPTO_KEY, флаг: -crypto-key.
-	ConfigPath                string // ConfigPath — путь к JSON-файлу конфигурации. env: CONFIG, флаг: -c/-config.
-	StorageMode               string // StorageMode — активный тип хранилища (db, file, memory).
+	RunAddr                   string
+	PersistentStorageInterval int
+	PersistentStoragePath     string
+	PersistentStorageRestore  bool
+	DatabaseDSN               string
+	HashKey                   string
+	AuditFile                 string
+	AuditURL                  string
+	CryptoKeyPath             string
+	ConfigPath                string
+	StorageMode               string
 }
 
-// LoadAServerConfig загружает конфигурацию сервера из файла конфигурации,
-// переменных окружения и флагов.
+// LoadAServerConfig загружает конфигурацию сервера из флагов, переменных
+// окружения и JSON-файла конфигурации.
 func LoadAServerConfig() (*Config, error) {
 	var cfg Config
-
-	if err := env.Parse(&cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse env vars: %w", err)
-	}
 
 	flag.StringVar(&cfg.RunAddr, "a", "", "Address and port to run server")
 	flag.StringVar(&cfg.PersistentStoragePath, "f", "", "Path to store metrics")
@@ -42,10 +39,9 @@ func LoadAServerConfig() (*Config, error) {
 	flag.StringVar(&cfg.CryptoKeyPath, "crypto-key", "", "Path to private key file for decryption")
 	flag.StringVar(&cfg.ConfigPath, "c", "", "Path to JSON config file")
 	flag.StringVar(&cfg.ConfigPath, "config", "", "Path to JSON config file (alias for -c)")
-
-	flag.StringVar(&cfg.HashKey, "k", cfg.HashKey, "Hash key")
-	flag.StringVar(&cfg.AuditFile, "audit-file", cfg.AuditFile, "Path to audit log file")
-	flag.StringVar(&cfg.AuditURL, "audit-url", cfg.AuditURL, "URL to send audit logs")
+	flag.StringVar(&cfg.HashKey, "k", "", "Hash key")
+	flag.StringVar(&cfg.AuditFile, "audit-file", "", "Path to audit log file")
+	flag.StringVar(&cfg.AuditURL, "audit-url", "", "URL to send audit logs")
 	flag.Parse()
 
 	if unknownFlags := flag.Args(); len(unknownFlags) > 0 {
@@ -56,24 +52,41 @@ func LoadAServerConfig() (*Config, error) {
 	flag.Visit(func(f *flag.Flag) { visited[f.Name] = true })
 
 	if !visited["c"] && !visited["config"] {
-		cfg.ConfigPath = os.Getenv("CONFIG")
-	}
-
-	var fileCfg fileconfig.ServerConfig
-	if cfg.ConfigPath != "" {
-		var err error
-		fileCfg, err = fileconfig.LoadServerConfig(cfg.ConfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load config file: %w", err)
+		if v, ok := os.LookupEnv("CONFIG"); ok {
+			cfg.ConfigPath = v
 		}
 	}
 
-	cfg.RunAddr = fileconfig.ResolveString(visited["a"], cfg.RunAddr, "ADDRESS", fileCfg.Address, ":8080")
-	cfg.PersistentStoragePath = fileconfig.ResolveString(visited["f"], cfg.PersistentStoragePath, "STORE_FILE", fileCfg.StoreFile, "metrics.json")
-	cfg.PersistentStorageInterval = fileconfig.ResolveDurationSeconds(visited["i"], cfg.PersistentStorageInterval, "STORE_INTERVAL", fileCfg.StoreInterval, 0)
-	cfg.PersistentStorageRestore = fileconfig.ResolveBool(visited["r"], cfg.PersistentStorageRestore, "RESTORE", fileCfg.Restore, false)
-	cfg.DatabaseDSN = fileconfig.ResolveString(visited["d"], cfg.DatabaseDSN, "DATABASE_DSN", fileCfg.DatabaseDSN, "")
-	cfg.CryptoKeyPath = fileconfig.ResolveString(visited["crypto-key"], cfg.CryptoKeyPath, "CRYPTO_KEY", fileCfg.CryptoKey, "")
+	v := viper.New()
+	v.SetDefault("address", ":8080")
+	v.SetDefault("store_file", "metrics.json")
+	v.SetDefault("store_interval", 0)
+	v.SetDefault("restore", false)
+	v.SetDefault("database_dsn", "")
+	v.SetDefault("crypto_key", "")
+	v.SetDefault("hash_key", "")
+	v.SetDefault("audit_file", "")
+	v.SetDefault("audit_url", "")
+
+	if cfg.ConfigPath != "" {
+		fileCfg, err := fileconfig.LoadServerConfig(cfg.ConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load config file: %w", err)
+		}
+		applyServerFileDefaults(v, fileCfg)
+	}
+
+	v.AutomaticEnv()
+
+	cfg.RunAddr = resolveString(visited["a"], cfg.RunAddr, v, "address")
+	cfg.PersistentStoragePath = resolveString(visited["f"], cfg.PersistentStoragePath, v, "store_file")
+	cfg.PersistentStorageInterval = resolveInt(visited["i"], cfg.PersistentStorageInterval, v, "store_interval")
+	cfg.PersistentStorageRestore = resolveBool(visited["r"], cfg.PersistentStorageRestore, v, "restore")
+	cfg.DatabaseDSN = resolveString(visited["d"], cfg.DatabaseDSN, v, "database_dsn")
+	cfg.CryptoKeyPath = resolveString(visited["crypto-key"], cfg.CryptoKeyPath, v, "crypto_key")
+	cfg.HashKey = resolveString(visited["k"], cfg.HashKey, v, "hash_key")
+	cfg.AuditFile = resolveString(visited["audit-file"], cfg.AuditFile, v, "audit_file")
+	cfg.AuditURL = resolveString(visited["audit-url"], cfg.AuditURL, v, "audit_url")
 
 	switch {
 	case cfg.DatabaseDSN != "":
@@ -84,4 +97,47 @@ func LoadAServerConfig() (*Config, error) {
 		cfg.StorageMode = "memory"
 	}
 	return &cfg, nil
+}
+
+// applyServerFileDefaults кладёт значения из файла в слой default
+func applyServerFileDefaults(v *viper.Viper, fileCfg fileconfig.ServerConfig) {
+	if fileCfg.Address != nil {
+		v.SetDefault("address", *fileCfg.Address)
+	}
+	if fileCfg.Restore != nil {
+		v.SetDefault("restore", *fileCfg.Restore)
+	}
+	if fileCfg.StoreInterval != nil {
+		v.SetDefault("store_interval", int(time.Duration(*fileCfg.StoreInterval).Seconds()))
+	}
+	if fileCfg.StoreFile != nil {
+		v.SetDefault("store_file", *fileCfg.StoreFile)
+	}
+	if fileCfg.DatabaseDSN != nil {
+		v.SetDefault("database_dsn", *fileCfg.DatabaseDSN)
+	}
+	if fileCfg.CryptoKey != nil {
+		v.SetDefault("crypto_key", *fileCfg.CryptoKey)
+	}
+}
+
+func resolveString(flagSet bool, flagValue string, v *viper.Viper, key string) string {
+	if flagSet {
+		return flagValue
+	}
+	return v.GetString(key)
+}
+
+func resolveBool(flagSet bool, flagValue bool, v *viper.Viper, key string) bool {
+	if flagSet {
+		return flagValue
+	}
+	return v.GetBool(key)
+}
+
+func resolveInt(flagSet bool, flagValue int, v *viper.Viper, key string) int {
+	if flagSet {
+		return flagValue
+	}
+	return v.GetInt(key)
 }

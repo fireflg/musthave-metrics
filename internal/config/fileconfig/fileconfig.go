@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -77,50 +76,4 @@ func LoadAgentConfig(path string) (AgentConfig, error) {
 	}
 
 	return cfg, nil
-}
-
-// ResolveString возвращает строковое значение.
-func ResolveString(flagSet bool, flagValue string, envKey string, fileValue *string, defaultValue string) string {
-	if flagSet {
-		return flagValue
-	}
-	if v, ok := os.LookupEnv(envKey); ok {
-		return v
-	}
-	if fileValue != nil {
-		return *fileValue
-	}
-	return defaultValue
-}
-
-// ResolveBool возвращает булевое значение.
-func ResolveBool(flagSet bool, flagValue bool, envKey string, fileValue *bool, defaultValue bool) bool {
-	if flagSet {
-		return flagValue
-	}
-	if v, ok := os.LookupEnv(envKey); ok {
-		if b, err := strconv.ParseBool(v); err == nil {
-			return b
-		}
-	}
-	if fileValue != nil {
-		return *fileValue
-	}
-	return defaultValue
-}
-
-// ResolveDurationSeconds возвращает значение интервала в секундах.
-func ResolveDurationSeconds(flagSet bool, flagValue int, envKey string, fileValue *Duration, defaultValue int) int {
-	if flagSet {
-		return flagValue
-	}
-	if v, ok := os.LookupEnv(envKey); ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	if fileValue != nil {
-		return int(time.Duration(*fileValue).Seconds())
-	}
-	return defaultValue
 }

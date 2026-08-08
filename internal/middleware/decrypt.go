@@ -10,23 +10,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// DecryptMiddleware — HTTP мидлварь для расшифровки тела запроса.
-// Если приватный ключ не предоставлен, запросы обрабатываются без изменений.
-// Расшифровка выполняется до распаковки gzip, так как агент шифрует уже
-// сжатые данные.
+// DecryptMiddleware — HTTP мидлварь для расшифровки тела запроса приватным
+// ключом privateKey. Расшифровка выполняется до распаковки gzip, так как
+// агент шифрует уже сжатые данные.
 func DecryptMiddleware(h http.HandlerFunc, privateKey *rsa.PrivateKey, logger *zap.SugaredLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if privateKey == nil {
-			h.ServeHTTP(w, r)
-			return
-		}
+		defer r.Body.Close()
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Failed to read request body", http.StatusInternalServerError)
 			return
 		}
-		r.Body.Close()
 
 		decrypted, err := crypto.Decrypt(privateKey, body)
 		if err != nil {

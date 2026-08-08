@@ -5,32 +5,27 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
-	"github.com/caarlos0/env"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/config/fileconfig"
+	"github.com/spf13/viper"
 )
 
 // Config содержит параметры конфигурации агента.
 type Config struct {
-	ServerURL      string // ServerURL — эндпоинт сервера для отправки метрик. env: ADDRESS, флаг: -a.
-	PollInterval   int    // PollInterval — интервал в секундах для сбора метрик. env: POLL_INTERVAL, флаг: -p.
-	ReportInterval int    // ReportInterval — интервал в секундах для отправки метрик. env: REPORT_INTERVAL, флаг: -r.
-	SecretKey      string `env:"KEY" envDefault:""`         // SecretKey — HMAC ключ для подписи запросов.
-	RateLimit      int    `env:"RATE_LIMIT" envDefault:"3"` // RateLimit — количество параллельных репортеров.
-	CryptoKeyPath  string // CryptoKeyPath — путь к файлу с публичным ключом для шифрования запросов. env: CRYPTO_KEY, флаг: -crypto-key.
-	ConfigPath     string // ConfigPath — путь к JSON-файлу конфигурации. env: CONFIG, флаг: -c/-config.
+	ServerURL      string
+	PollInterval   int
+	ReportInterval int
+	SecretKey      string
+	RateLimit      int
+	CryptoKeyPath  string
+	ConfigPath     string
 }
 
-// LoadAgentConfig загружает конфигурацию агента из файла конфигурации,
-// переменных окружения и флагов. Приоритет источников (от высшего к
-// низшему): флаг, переменная окружения, файл конфигурации, значение по
-// умолчанию.
+// LoadAgentConfig загружает конфигурацию агента из флагов, переменных
+// окружения и JSON-файла конфигурации.
 func LoadAgentConfig() (*Config, error) {
 	var cfg Config
-
-	if err := env.Parse(&cfg); err != nil {
-		return nil, err
-	}
 
 	flag.StringVar(&cfg.ServerURL, "a", "", "Server address (default: from env or 'localhost:8080')")
 	flag.IntVar(&cfg.PollInterval, "p", 0, "Poll interval in seconds (default: from env or 10)")
@@ -38,10 +33,8 @@ func LoadAgentConfig() (*Config, error) {
 	flag.StringVar(&cfg.CryptoKeyPath, "crypto-key", "", "Path to public key file for encryption")
 	flag.StringVar(&cfg.ConfigPath, "c", "", "Path to JSON config file")
 	flag.StringVar(&cfg.ConfigPath, "config", "", "Path to JSON config file (alias for -c)")
-
-	flag.StringVar(&cfg.SecretKey, "k", cfg.SecretKey, "Hash key (default: env or 'key')")
-	flag.IntVar(&cfg.RateLimit, "l", cfg.RateLimit, "Rate limit send to server")
-
+	flag.StringVar(&cfg.SecretKey, "k", "", "Hash key (default: env or 'key')")
+	flag.IntVar(&cfg.RateLimit, "l", 0, "Rate limit send to server")
 	flag.Parse()
 
 	if unknownFlags := flag.Args(); len(unknownFlags) > 0 {
@@ -52,26 +45,69 @@ func LoadAgentConfig() (*Config, error) {
 	flag.Visit(func(f *flag.Flag) { visited[f.Name] = true })
 
 	if !visited["c"] && !visited["config"] {
-		cfg.ConfigPath = os.Getenv("CONFIG")
-	}
-
-	var fileCfg fileconfig.AgentConfig
-	if cfg.ConfigPath != "" {
-		var err error
-		fileCfg, err = fileconfig.LoadAgentConfig(cfg.ConfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load config file: %w", err)
+		if v, ok := os.LookupEnv("CONFIG"); ok {
+			cfg.ConfigPath = v
 		}
 	}
 
-	cfg.ServerURL = fileconfig.ResolveString(visited["a"], cfg.ServerURL, "ADDRESS", fileCfg.Address, "http://localhost:8080")
-	cfg.PollInterval = fileconfig.ResolveDurationSeconds(visited["p"], cfg.PollInterval, "POLL_INTERVAL", fileCfg.PollInterval, 0)
-	cfg.ReportInterval = fileconfig.ResolveDurationSeconds(visited["r"], cfg.ReportInterval, "REPORT_INTERVAL", fileCfg.ReportInterval, 10)
-	cfg.CryptoKeyPath = fileconfig.ResolveString(visited["crypto-key"], cfg.CryptoKeyPath, "CRYPTO_KEY", fileCfg.CryptoKey, "")
+	v := viper.New()
+	v.SetDefault("address", "http://localhost:8080")
+	v.SetDefault("poll_interval", 0)
+	v.SetDefault("report_interval", 10)
+	v.SetDefault("crypto_key", "")
+	v.SetDefault("key", "")
+	v.SetDefault("rate_limit", 3)
+
+	if cfg.ConfigPath != "" {
+		fileCfg, err := fileconfig.LoadAgentConfig(cfg.ConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load config file: %w", err)
+		}
+		applyAgentFileDefaults(v, fileCfg)
+	}
+
+	v.AutomaticEnv()
+
+	cfg.ServerURL = resolveString(visited["a"], cfg.ServerURL, v, "address")
+	cfg.PollInterval = resolveInt(visited["p"], cfg.PollInterval, v, "poll_interval")
+	cfg.ReportInterval = resolveInt(visited["r"], cfg.ReportInterval, v, "report_interval")
+	cfg.CryptoKeyPath = resolveString(visited["crypto-key"], cfg.CryptoKeyPath, v, "crypto_key")
+	cfg.SecretKey = resolveString(visited["k"], cfg.SecretKey, v, "key")
+	cfg.RateLimit = resolveInt(visited["l"], cfg.RateLimit, v, "rate_limit")
 
 	if !strings.Contains(cfg.ServerURL, "http://") {
 		cfg.ServerURL = "http://" + cfg.ServerURL
 	}
 
 	return &cfg, nil
+}
+
+// applyAgentFileDefaults кладёт значения из файла в слой default
+func applyAgentFileDefaults(v *viper.Viper, fileCfg fileconfig.AgentConfig) {
+	if fileCfg.Address != nil {
+		v.SetDefault("address", *fileCfg.Address)
+	}
+	if fileCfg.ReportInterval != nil {
+		v.SetDefault("report_interval", int(time.Duration(*fileCfg.ReportInterval).Seconds()))
+	}
+	if fileCfg.PollInterval != nil {
+		v.SetDefault("poll_interval", int(time.Duration(*fileCfg.PollInterval).Seconds()))
+	}
+	if fileCfg.CryptoKey != nil {
+		v.SetDefault("crypto_key", *fileCfg.CryptoKey)
+	}
+}
+
+func resolveString(flagSet bool, flagValue string, v *viper.Viper, key string) string {
+	if flagSet {
+		return flagValue
+	}
+	return v.GetString(key)
+}
+
+func resolveInt(flagSet bool, flagValue int, v *viper.Viper, key string) int {
+	if flagSet {
+		return flagValue
+	}
+	return v.GetInt(key)
 }

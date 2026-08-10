@@ -38,6 +38,8 @@ func TestLoadAServerConfig_Defaults(t *testing.T) {
 	assert.False(t, cfg.PersistentStorageRestore)
 	assert.Equal(t, "", cfg.DatabaseDSN)
 	assert.Equal(t, "", cfg.CryptoKeyPath)
+	assert.Equal(t, "", cfg.TrustedSubnet)
+	assert.Equal(t, "", cfg.GRPCAddr)
 	assert.Equal(t, "memory", cfg.StorageMode)
 }
 
@@ -52,6 +54,8 @@ func TestLoadAServerConfig_EnvVars(t *testing.T) {
 	t.Setenv("RESTORE", "true")
 	t.Setenv("DATABASE_DSN", "postgres://user:pass@localhost/db")
 	t.Setenv("CRYPTO_KEY", "/path/to/private.pem")
+	t.Setenv("TRUSTED_SUBNET", "192.168.0.0/24")
+	t.Setenv("GRPC_ADDRESS", ":3200")
 
 	resetFlags()
 
@@ -63,13 +67,15 @@ func TestLoadAServerConfig_EnvVars(t *testing.T) {
 	assert.True(t, cfg.PersistentStorageRestore)
 	assert.Equal(t, "postgres://user:pass@localhost/db", cfg.DatabaseDSN)
 	assert.Equal(t, "/path/to/private.pem", cfg.CryptoKeyPath)
+	assert.Equal(t, "192.168.0.0/24", cfg.TrustedSubnet)
+	assert.Equal(t, ":3200", cfg.GRPCAddr)
 	assert.Equal(t, "db", cfg.StorageMode)
 }
 
 func TestLoadAServerConfig_Flags(t *testing.T) {
 	origArgs := os.Args
 	defer func() { os.Args = origArgs }()
-	os.Args = []string{"cmd", "-a=:7070", "-i=50", "-f=flag_metrics.json", "-r=true", "-d=postgres://flag", "-crypto-key=/flag/key.pem"}
+	os.Args = []string{"cmd", "-a=:7070", "-i=50", "-f=flag_metrics.json", "-r=true", "-d=postgres://flag", "-crypto-key=/flag/key.pem", "-t=10.0.0.0/8", "-g=:3201"}
 
 	resetFlags()
 
@@ -81,6 +87,8 @@ func TestLoadAServerConfig_Flags(t *testing.T) {
 	assert.True(t, cfg.PersistentStorageRestore)
 	assert.Equal(t, "postgres://flag", cfg.DatabaseDSN)
 	assert.Equal(t, "/flag/key.pem", cfg.CryptoKeyPath)
+	assert.Equal(t, "10.0.0.0/8", cfg.TrustedSubnet)
+	assert.Equal(t, ":3201", cfg.GRPCAddr)
 }
 
 func TestLoadAServerConfig_ConfigFile(t *testing.T) {
@@ -93,9 +101,10 @@ func TestLoadAServerConfig_ConfigFile(t *testing.T) {
 		"store_interval": "5s",
 		"store_file": "/path/to/file.db",
 		"database_dsn": "postgres://file",
-		"crypto_key": "/path/to/file_key.pem"
+		"crypto_key": "/path/to/file_key.pem",
+		"trusted_subnet": "172.16.0.0/12",
+		"grpc_address": ":3202"
 	}`)
-
 	os.Args = []string{"cmd", "-c=" + path}
 
 	resetFlags()
@@ -108,6 +117,8 @@ func TestLoadAServerConfig_ConfigFile(t *testing.T) {
 	assert.True(t, cfg.PersistentStorageRestore)
 	assert.Equal(t, "postgres://file", cfg.DatabaseDSN)
 	assert.Equal(t, "/path/to/file_key.pem", cfg.CryptoKeyPath)
+	assert.Equal(t, "172.16.0.0/12", cfg.TrustedSubnet)
+	assert.Equal(t, ":3202", cfg.GRPCAddr)
 }
 
 func TestLoadAServerConfig_ConfigFileViaEnv(t *testing.T) {
@@ -138,7 +149,6 @@ func TestLoadAServerConfig_Priority(t *testing.T) {
 		"crypto_key": "from-file-key.pem"
 	}`)
 
-	// Флаг побеждает переменную окружения и файл.
 	os.Args = []string{"cmd", "-c=" + path, "-a=from-flag:8080"}
 	t.Setenv("ADDRESS", "from-env:8080")
 
@@ -148,7 +158,6 @@ func TestLoadAServerConfig_Priority(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "from-flag:8080", cfg.RunAddr)
 
-	// Переменная окружения побеждает файл, если флаг не задан.
 	assert.Equal(t, "from_file.json", cfg.PersistentStoragePath)
 	require.NotEqual(t, "", cfg.DatabaseDSN)
 }

@@ -17,10 +17,6 @@ func WithLogging(logger *zap.SugaredLogger) func(http.Handler) http.Handler {
 				statusCode:     http.StatusOK,
 			}
 
-			h.ServeHTTP(lrw, r)
-
-			duration := time.Since(start)
-
 			defer func() {
 				if err := recover(); err != nil {
 					logger.Errorw(
@@ -29,9 +25,15 @@ func WithLogging(logger *zap.SugaredLogger) func(http.Handler) http.Handler {
 						"uri", r.RequestURI,
 						"panic", err,
 					)
-					http.Error(w, "internal server error", http.StatusInternalServerError)
+					if !lrw.wroteHeader {
+						http.Error(w, "internal server error", http.StatusInternalServerError)
+					}
 				}
 			}()
+
+			h.ServeHTTP(lrw, r)
+
+			duration := time.Since(start)
 
 			if lrw.statusCode >= 400 {
 				logger.Errorw(
@@ -57,14 +59,20 @@ func WithLogging(logger *zap.SugaredLogger) func(http.Handler) http.Handler {
 
 type loggingResponseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode  int
+	wroteHeader bool
 }
 
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	if lrw.wroteHeader {
+		return
+	}
+	lrw.wroteHeader = true
 	lrw.statusCode = code
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
 func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
+	lrw.wroteHeader = true
 	return lrw.ResponseWriter.Write(b)
 }

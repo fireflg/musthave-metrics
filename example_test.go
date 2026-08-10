@@ -2,6 +2,9 @@ package musthave_metrics_test
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -226,13 +229,17 @@ func Example_pingDatabase() {
 
 // createTestServer создает тестовый сервер с in-memory репозиторием.
 func createTestServer() *httptest.Server {
+	return createSignedTestServer("")
+}
+
+func createSignedTestServer(secretKey string) *httptest.Server {
 	logger, _ := zap.NewDevelopment()
 	sugar := logger.Sugar()
 
 	repo := memory.NewMemoryRepository()
 	svc := service.NewMetricsService(repo, nil)
 
-	h := handler.NewMetricsHandler(svc, sugar, nil)
+	h := handler.NewMetricsHandler(svc, sugar, secretKey, nil, nil)
 	r := h.ServerRouter()
 
 	return httptest.NewServer(r)
@@ -276,7 +283,9 @@ func Example_gzipCompressedRequest() {
 // Example_signedRequest демонстрирует HMAC-подписанные запросы
 func Example_signedRequest() {
 
-	server := createTestServer()
+	const secretKey = "super-secret"
+
+	server := createSignedTestServer(secretKey)
 	defer server.Close()
 
 	// Создаем JSON payload
@@ -298,6 +307,10 @@ func Example_signedRequest() {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write(body)
+	req.Header.Set("HashSHA256", hex.EncodeToString(mac.Sum(nil)))
+
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -307,6 +320,7 @@ func Example_signedRequest() {
 	defer resp.Body.Close()
 
 	fmt.Printf("Status: %d\n", resp.StatusCode)
+	// Output: Status: 200
 }
 
 // Example_parseMetricResponse демонстрирует разбор ответов метрик

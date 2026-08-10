@@ -12,44 +12,37 @@ import (
 )
 
 // SignMiddleware — HTTP мидлвар для проверки HMAC подписи.
-// Проверяет заголовок HashSHA256 против тела запроса с использованием
-// предоставленного секретного ключа. Если секретный ключ не предоставлен,
-// запросы обрабатываются без проверки.
 func SignMiddleware(h http.HandlerFunc, secretKey string, logger *zap.SugaredLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if secretKey != "" {
-			hashHeader := r.Header.Get("HashSHA256")
+		hashHeader := r.Header.Get("HashSHA256")
 
-			if hashHeader != "" {
-				receivedSignature, err := hex.DecodeString(hashHeader)
-				if err != nil {
-					http.Error(w, "Invalid hash format", http.StatusBadRequest)
-					return
-				}
+		if secretKey == "" || hashHeader == "" {
+			logger.Debug("Signature check skipped")
+			h.ServeHTTP(w, r)
+			return
+		}
 
-				body, err := io.ReadAll(r.Body)
-				if err != nil {
-					http.Error(w, "Failed to read request body", http.StatusInternalServerError)
-					return
-				}
+		receivedSignature, err := hex.DecodeString(hashHeader)
+		if err != nil {
+			http.Error(w, "Invalid hash format", http.StatusBadRequest)
+			return
+		}
 
-				r.Body.Close()
-				r.Body = io.NopCloser(bytes.NewBuffer(body))
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+			return
+		}
 
-				hsh := hmac.New(sha256.New, []byte(secretKey))
-				hsh.Write(body)
-				expectedSignature := hsh.Sum(nil)
+		r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewBuffer(body))
 
-				if !hmac.Equal(receivedSignature, expectedSignature) {
-					http.Error(w, "Invalid signature", http.StatusBadRequest)
-					return
-				}
-			} else {
-				http.Error(w, "Signature required", http.StatusBadRequest)
-				return
-			}
-		} else {
-			logger.Info("No secret key provided")
+		hsh := hmac.New(sha256.New, []byte(secretKey))
+		hsh.Write(body)
+
+		if !hmac.Equal(receivedSignature, hsh.Sum(nil)) {
+			http.Error(w, "Invalid signature", http.StatusBadRequest)
+			return
 		}
 
 		h.ServeHTTP(w, r)

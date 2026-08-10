@@ -81,14 +81,10 @@ func TestSetMetricAndGetMetric(t *testing.T) {
 	metricCounter := models.Metrics{ID: "counter1", MType: "counter", Delta: &delta}
 
 	mock.ExpectExec(regexp.QuoteMeta(
-		`UPDATE metrics
-			SET delta = COALESCE(delta, 0) + $2
-			WHERE id = $1 AND type = 'counter'`)).
-		WithArgs("counter1", delta).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(
-		`INSERT INTO metrics (id, type, delta)
-				VALUES ($1, 'counter', $2)`)).
+		`INSERT INTO metrics AS m (id, type, delta)
+		VALUES ($1, 'counter', $2)
+		ON CONFLICT (id) DO UPDATE SET delta = COALESCE(m.delta, 0) + EXCLUDED.delta
+		WHERE m.type = 'counter'`)).
 		WithArgs("counter1", delta).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -110,14 +106,10 @@ func TestSetMetricAndGetMetric(t *testing.T) {
 	metricGauge := models.Metrics{ID: "gauge1", MType: "gauge", Value: &value}
 
 	mock.ExpectExec(regexp.QuoteMeta(
-		`UPDATE metrics
-			SET value = $2
-			WHERE id = $1 AND type = 'gauge'`)).
-		WithArgs("gauge1", value).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(
-		`INSERT INTO metrics (id, type, value)
-				VALUES ($1, 'gauge', $2)`)).
+		`INSERT INTO metrics AS m (id, type, value)
+		VALUES ($1, 'gauge', $2)
+		ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value
+		WHERE m.type = 'gauge'`)).
 		WithArgs("gauge1", value).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -153,26 +145,18 @@ func TestSetMetricsBatch(t *testing.T) {
 	mock.ExpectBegin()
 
 	mock.ExpectExec(regexp.QuoteMeta(
-		`UPDATE metrics
-				SET delta = COALESCE(delta, 0) + $2
-				WHERE id = $1 AND type = 'counter'`)).
-		WithArgs("counter1", int64(10)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(
-		`INSERT INTO metrics (id, type, delta)
-					VALUES ($1, 'counter', $2)`)).
+		`INSERT INTO metrics AS m (id, type, delta)
+		VALUES ($1, 'counter', $2)
+		ON CONFLICT (id) DO UPDATE SET delta = COALESCE(m.delta, 0) + EXCLUDED.delta
+		WHERE m.type = 'counter'`)).
 		WithArgs("counter1", int64(10)).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mock.ExpectExec(regexp.QuoteMeta(
-		`UPDATE metrics
-				SET value = $2
-				WHERE id = $1 AND type = 'gauge'`)).
-		WithArgs("gauge1", 2.71).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(regexp.QuoteMeta(
-		`INSERT INTO metrics (id, type, value)
-					VALUES ($1, 'gauge', $2)`)).
+		`INSERT INTO metrics AS m (id, type, value)
+		VALUES ($1, 'gauge', $2)
+		ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value
+		WHERE m.type = 'gauge'`)).
 		WithArgs("gauge1", 2.71).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -182,6 +166,40 @@ func TestSetMetricsBatch(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSetMetricsBatch_RollbackOnError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	defer mockDB.Close()
+
+	repo := &db.PostgresRepository{DB: mockDB}
+
+	metrics := []models.Metrics{
+		{ID: "counter1", MType: "counter", Delta: ptrInt64(10)},
+		{ID: "broken", MType: "counter"},
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO metrics AS m (id, type, delta)`)).
+		WithArgs("counter1", int64(10)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectRollback()
+
+	err = repo.SetMetrics(context.Background(), metrics)
+	assert.Error(t, err)
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNewPostgresRepository_UnknownDriverOptions(t *testing.T) {
+	repo, err := db.NewPostgresRepository("postgres://user:pass@127.0.0.1:1/db?sslmode=disable")
+	assert.NoError(t, err)
+	assert.NotNil(t, repo)
+
+	closer, ok := repo.(interface{ Close() error })
+	assert.True(t, ok)
+	assert.NoError(t, closer.Close())
 }
 
 func ptrInt64(v int64) *int64       { return &v }

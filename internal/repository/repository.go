@@ -29,7 +29,7 @@ const (
 func NewRepository(cfg server.Config) (models.MetricsRepository, error) {
 	switch cfg.StorageMode {
 	case string(StorageTypePostgres):
-		return db.NewPostgresRepository(cfg.DatabaseDSN), nil
+		return db.NewPostgresRepository(cfg.DatabaseDSN)
 	case string(StorageTypeMemory):
 		return memory.NewMemoryRepository(), nil
 	case string(StorageTypeFile):

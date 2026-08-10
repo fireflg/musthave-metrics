@@ -26,7 +26,9 @@ func TestLoadServerConfig(t *testing.T) {
 		"store_interval": "1s",
 		"store_file": "/path/to/file.db",
 		"database_dsn": "postgres://x",
-		"crypto_key": "/path/to/key.pem"
+		"crypto_key": "/path/to/key.pem",
+		"trusted_subnet": "192.168.0.0/24",
+		"grpc_address": ":3200"
 	}`)
 
 	cfg, err := fileconfig.LoadServerConfig(path)
@@ -44,6 +46,10 @@ func TestLoadServerConfig(t *testing.T) {
 	assert.Equal(t, "postgres://x", *cfg.DatabaseDSN)
 	require.NotNil(t, cfg.CryptoKey)
 	assert.Equal(t, "/path/to/key.pem", *cfg.CryptoKey)
+	require.NotNil(t, cfg.TrustedSubnet)
+	assert.Equal(t, "192.168.0.0/24", *cfg.TrustedSubnet)
+	require.NotNil(t, cfg.GRPCAddress)
+	assert.Equal(t, ":3200", *cfg.GRPCAddress)
 }
 
 func TestLoadServerConfig_PartialFile(t *testing.T) {
@@ -59,6 +65,8 @@ func TestLoadServerConfig_PartialFile(t *testing.T) {
 	assert.Nil(t, cfg.StoreFile)
 	assert.Nil(t, cfg.DatabaseDSN)
 	assert.Nil(t, cfg.CryptoKey)
+	assert.Nil(t, cfg.TrustedSubnet)
+	assert.Nil(t, cfg.GRPCAddress)
 }
 
 func TestLoadAgentConfig(t *testing.T) {
@@ -66,7 +74,8 @@ func TestLoadAgentConfig(t *testing.T) {
 		"address": "localhost:8080",
 		"report_interval": "1s",
 		"poll_interval": "2s",
-		"crypto_key": "/path/to/key.pem"
+		"crypto_key": "/path/to/key.pem",
+		"grpc_address": ":3200"
 	}`)
 
 	cfg, err := fileconfig.LoadAgentConfig(path)
@@ -80,6 +89,8 @@ func TestLoadAgentConfig(t *testing.T) {
 	assert.Equal(t, 2, int(time.Duration(*cfg.PollInterval).Seconds()))
 	require.NotNil(t, cfg.CryptoKey)
 	assert.Equal(t, "/path/to/key.pem", *cfg.CryptoKey)
+	require.NotNil(t, cfg.GRPCAddress)
+	assert.Equal(t, ":3200", *cfg.GRPCAddress)
 }
 
 func TestLoadServerConfig_FileNotFound(t *testing.T) {

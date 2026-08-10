@@ -9,8 +9,7 @@ import (
 	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
 )
 
-// MemoryRepository is an in-memory implementation of MetricsRepository.
-// It stores metrics in a thread-safe map.
+// MemoryRepository имплементация MetricsRepository хранения метрик в оперативной памяти.
 type MemoryRepository struct {
 	Metrics map[string]models.Metrics
 	mu      sync.Mutex
@@ -72,6 +71,10 @@ func (m *MemoryRepository) SetCounter(ctx context.Context, name string, value in
 }
 
 func (m *MemoryRepository) SetMetric(ctx context.Context, metric models.Metrics) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation canceled: %w", err)
+	}
+
 	if metric.ID == "" {
 		return fmt.Errorf("metric ID is empty")
 	}
@@ -135,7 +138,9 @@ func (m *MemoryRepository) SetMetrics(ctx context.Context, metrics []models.Metr
 	}
 
 	for _, metric := range metrics {
-		m.SetMetric(ctx, metric)
+		if err := m.SetMetric(ctx, metric); err != nil {
+			return fmt.Errorf("failed to set metric %q: %w", metric.ID, err)
+		}
 	}
 	return nil
 }
@@ -197,14 +202,14 @@ func (m *MemoryRepository) GetMetric(ctx context.Context, metricID, metricType s
 		if metric.Delta == nil {
 			return nil, errors.New("counter delta is nil")
 		}
-		return &models.Metrics{Delta: metric.Delta,
+		return &models.Metrics{ID: metricID, Delta: metric.Delta,
 			MType: metricType}, nil
 
 	case "gauge":
 		if metric.Value == nil {
 			return nil, errors.New("gauge value is nil")
 		}
-		return &models.Metrics{Value: metric.Value,
+		return &models.Metrics{ID: metricID, Value: metric.Value,
 			MType: metricType}, nil
 
 	default:
@@ -217,5 +222,12 @@ func (m *MemoryRepository) Ping(ctx context.Context) error {
 }
 
 func (m *MemoryRepository) GetAllMetrics() map[string]models.Metrics {
-	return m.Metrics
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	snapshot := make(map[string]models.Metrics, len(m.Metrics))
+	for id, metric := range m.Metrics {
+		snapshot[id] = metric
+	}
+	return snapshot
 }

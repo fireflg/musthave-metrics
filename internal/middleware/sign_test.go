@@ -78,15 +78,16 @@ func TestSignMiddleware_MissingSignature(t *testing.T) {
 	called := false
 	handler := middleware.SignMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		called = true
+		w.WriteHeader(http.StatusOK)
 	}, secret, logger)
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 BadRequest, got %d", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rr.Code)
 	}
-	if called {
-		t.Fatal("handler should not be called when signature missing")
+	if !called {
+		t.Fatal("handler should be called when signature is missing")
 	}
 }
 

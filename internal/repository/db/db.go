@@ -12,14 +12,31 @@ import (
 	"time"
 )
 
+const (
+	upsertCounter = `
+		INSERT INTO metrics AS m (id, type, delta)
+		VALUES ($1, 'counter', $2)
+		ON CONFLICT (id) DO UPDATE SET delta = COALESCE(m.delta, 0) + EXCLUDED.delta
+		WHERE m.type = 'counter'`
+
+	upsertGauge = `
+		INSERT INTO metrics AS m (id, type, value)
+		VALUES ($1, 'gauge', $2)
+		ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value
+		WHERE m.type = 'gauge'`
+)
+
 // PostgresRepository — репозиторий метрик с хранением в PostgreSQL.
 type PostgresRepository struct {
 	DB *sql.DB
 }
 
 // NewPostgresRepository создает новый PostgresRepository.
-func NewPostgresRepository(dsn string) models.MetricsRepository {
-	db, _ := sql.Open("pgx", dsn)
+func NewPostgresRepository(dsn string) (models.MetricsRepository, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
 
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(25)
@@ -29,7 +46,7 @@ func NewPostgresRepository(dsn string) models.MetricsRepository {
 		log.Printf("Warning: failed to create metrics table: %v", err)
 	}
 
-	return &PostgresRepository{DB: db}
+	return &PostgresRepository{DB: db}, nil
 }
 
 func (r *PostgresRepository) Close() error {
@@ -104,6 +121,7 @@ func (r *PostgresRepository) SetCounter(ctx context.Context, name string, value 
 
 	return err
 }
+
 func (r *PostgresRepository) SetMetric(ctx context.Context, metric models.Metrics) error {
 	if metric.ID == "" {
 		return errors.New("metric ID is empty")
@@ -115,56 +133,20 @@ func (r *PostgresRepository) SetMetric(ctx context.Context, metric models.Metric
 			return errors.New("counter metric delta is nil")
 		}
 
-		res, err := r.DB.ExecContext(ctx, `
-			UPDATE metrics
-			SET delta = COALESCE(delta, 0) + $2
-			WHERE id = $1 AND type = 'counter'
-		`, metric.ID, *metric.Delta)
-		if err != nil {
-			return err
-		}
-
-		rowsAffected, _ := res.RowsAffected()
-		if rowsAffected == 0 {
-			_, err := r.DB.ExecContext(ctx, `
-				INSERT INTO metrics (id, type, delta)
-				VALUES ($1, 'counter', $2)
-			`, metric.ID, *metric.Delta)
-			if err != nil {
-				return err
-			}
-		}
+		_, err := r.DB.ExecContext(ctx, upsertCounter, metric.ID, *metric.Delta)
+		return err
 
 	case "gauge":
 		if metric.Value == nil {
 			return errors.New("gauge metric value is nil")
 		}
 
-		res, err := r.DB.ExecContext(ctx, `
-			UPDATE metrics
-			SET value = $2
-			WHERE id = $1 AND type = 'gauge'
-		`, metric.ID, *metric.Value)
-		if err != nil {
-			return err
-		}
-
-		rowsAffected, _ := res.RowsAffected()
-		if rowsAffected == 0 {
-			_, err := r.DB.ExecContext(ctx, `
-				INSERT INTO metrics (id, type, value)
-				VALUES ($1, 'gauge', $2)
-			`, metric.ID, *metric.Value)
-			if err != nil {
-				return err
-			}
-		}
+		_, err := r.DB.ExecContext(ctx, upsertGauge, metric.ID, *metric.Value)
+		return err
 
 	default:
 		return fmt.Errorf("unknown metric type: %s", metric.MType)
 	}
-
-	return nil
 }
 
 func (r *PostgresRepository) SetMetrics(ctx context.Context, metrics []models.Metrics) error {
@@ -176,7 +158,7 @@ func (r *PostgresRepository) SetMetrics(ctx context.Context, metrics []models.Me
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for _, metric := range metrics {
 		if metric.ID == "" {
@@ -189,24 +171,8 @@ func (r *PostgresRepository) SetMetrics(ctx context.Context, metrics []models.Me
 				return errors.New("counter metric delta is nil")
 			}
 
-			res, err := tx.ExecContext(ctx, `
-				UPDATE metrics
-				SET delta = COALESCE(delta, 0) + $2
-				WHERE id = $1 AND type = 'counter'
-			`, metric.ID, *metric.Delta)
-			if err != nil {
+			if _, err := tx.ExecContext(ctx, upsertCounter, metric.ID, *metric.Delta); err != nil {
 				return err
-			}
-
-			rowsAffected, _ := res.RowsAffected()
-			if rowsAffected == 0 {
-				_, err := tx.ExecContext(ctx, `
-					INSERT INTO metrics (id, type, delta)
-					VALUES ($1, 'counter', $2)
-				`, metric.ID, *metric.Delta)
-				if err != nil {
-					return err
-				}
 			}
 
 		case "gauge":
@@ -214,24 +180,8 @@ func (r *PostgresRepository) SetMetrics(ctx context.Context, metrics []models.Me
 				return errors.New("gauge metric value is nil")
 			}
 
-			res, err := tx.ExecContext(ctx, `
-				UPDATE metrics
-				SET value = $2
-				WHERE id = $1 AND type = 'gauge'
-			`, metric.ID, *metric.Value)
-			if err != nil {
+			if _, err := tx.ExecContext(ctx, upsertGauge, metric.ID, *metric.Value); err != nil {
 				return err
-			}
-
-			rowsAffected, _ := res.RowsAffected()
-			if rowsAffected == 0 {
-				_, err := tx.ExecContext(ctx, `
-					INSERT INTO metrics (id, type, value)
-					VALUES ($1, 'gauge', $2)
-				`, metric.ID, *metric.Value)
-				if err != nil {
-					return err
-				}
 			}
 
 		default:

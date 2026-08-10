@@ -22,6 +22,8 @@ type Config struct {
 	AuditFile                 string
 	AuditURL                  string
 	CryptoKeyPath             string
+	TrustedSubnet             string
+	GRPCAddr                  string
 	ConfigPath                string
 	StorageMode               string
 }
@@ -37,6 +39,8 @@ func LoadAServerConfig() (*Config, error) {
 	flag.BoolVar(&cfg.PersistentStorageRestore, "r", false, "Whether to restore metrics")
 	flag.StringVar(&cfg.DatabaseDSN, "d", "", "Database connection string")
 	flag.StringVar(&cfg.CryptoKeyPath, "crypto-key", "", "Path to private key file for decryption")
+	flag.StringVar(&cfg.TrustedSubnet, "t", "", "Trusted subnet in CIDR notation")
+	flag.StringVar(&cfg.GRPCAddr, "g", "", "Address and port to run gRPC server (empty = disabled)")
 	flag.StringVar(&cfg.ConfigPath, "c", "", "Path to JSON config file")
 	flag.StringVar(&cfg.ConfigPath, "config", "", "Path to JSON config file (alias for -c)")
 	flag.StringVar(&cfg.HashKey, "k", "", "Hash key")
@@ -64,6 +68,8 @@ func LoadAServerConfig() (*Config, error) {
 	v.SetDefault("restore", false)
 	v.SetDefault("database_dsn", "")
 	v.SetDefault("crypto_key", "")
+	v.SetDefault("trusted_subnet", "")
+	v.SetDefault("grpc_address", "")
 	v.SetDefault("hash_key", "")
 	v.SetDefault("audit_file", "")
 	v.SetDefault("audit_url", "")
@@ -78,12 +84,22 @@ func LoadAServerConfig() (*Config, error) {
 
 	v.AutomaticEnv()
 
+	if err := v.BindEnv("hash_key", "KEY", "HASH_KEY"); err != nil {
+		return nil, fmt.Errorf("failed to bind KEY env: %w", err)
+	}
+
+	if err := v.BindEnv("store_file", "FILE_STORAGE_PATH", "STORE_FILE"); err != nil {
+		return nil, fmt.Errorf("failed to bind FILE_STORAGE_PATH env: %w", err)
+	}
+
 	cfg.RunAddr = resolveString(visited["a"], cfg.RunAddr, v, "address")
 	cfg.PersistentStoragePath = resolveString(visited["f"], cfg.PersistentStoragePath, v, "store_file")
 	cfg.PersistentStorageInterval = resolveInt(visited["i"], cfg.PersistentStorageInterval, v, "store_interval")
 	cfg.PersistentStorageRestore = resolveBool(visited["r"], cfg.PersistentStorageRestore, v, "restore")
 	cfg.DatabaseDSN = resolveString(visited["d"], cfg.DatabaseDSN, v, "database_dsn")
 	cfg.CryptoKeyPath = resolveString(visited["crypto-key"], cfg.CryptoKeyPath, v, "crypto_key")
+	cfg.TrustedSubnet = resolveString(visited["t"], cfg.TrustedSubnet, v, "trusted_subnet")
+	cfg.GRPCAddr = resolveString(visited["g"], cfg.GRPCAddr, v, "grpc_address")
 	cfg.HashKey = resolveString(visited["k"], cfg.HashKey, v, "hash_key")
 	cfg.AuditFile = resolveString(visited["audit-file"], cfg.AuditFile, v, "audit_file")
 	cfg.AuditURL = resolveString(visited["audit-url"], cfg.AuditURL, v, "audit_url")
@@ -118,6 +134,12 @@ func applyServerFileDefaults(v *viper.Viper, fileCfg fileconfig.ServerConfig) {
 	}
 	if fileCfg.CryptoKey != nil {
 		v.SetDefault("crypto_key", *fileCfg.CryptoKey)
+	}
+	if fileCfg.TrustedSubnet != nil {
+		v.SetDefault("trusted_subnet", *fileCfg.TrustedSubnet)
+	}
+	if fileCfg.GRPCAddress != nil {
+		v.SetDefault("grpc_address", *fileCfg.GRPCAddress)
 	}
 }
 

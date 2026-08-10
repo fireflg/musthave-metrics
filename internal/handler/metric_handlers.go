@@ -6,38 +6,58 @@
 package handler
 
 import (
-	"context"
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/middleware"
 	models "github.com/fireflg/go-musthave-metrics-tpl/internal/model"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/observer"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"github.com/go-chi/chi/v5"
 
 	"go.uber.org/zap"
 )
 
-// contextKey — пользовательский тип для избежания коллизий в значениях контекста.
-type contextKey string
-
-const clientIPKey contextKey = "client_ip"
-
 // MetricsHandler обрабатывает HTTP запросы для операций с метриками.
 type MetricsHandler struct {
-	service   service.MetricsService
-	logger    *zap.SugaredLogger
-	secretKey string
-	cryptoKey *rsa.PrivateKey
+	service       service.MetricsService
+	logger        *zap.SugaredLogger
+	secretKey     string
+	cryptoKey     *rsa.PrivateKey
+	trustedSubnet *net.IPNet
 }
 
 // NewMetricsHandler создает новый экземпляр MetricsHandler.
-func NewMetricsHandler(service service.MetricsService, logger *zap.SugaredLogger, cryptoKey *rsa.PrivateKey) *MetricsHandler {
-	return &MetricsHandler{service: service, logger: logger, cryptoKey: cryptoKey}
+func NewMetricsHandler(
+	service service.MetricsService,
+	logger *zap.SugaredLogger,
+	secretKey string,
+	cryptoKey *rsa.PrivateKey,
+	trustedSubnet *net.IPNet,
+) *MetricsHandler {
+	return &MetricsHandler{
+		service:       service,
+		logger:        logger,
+		secretKey:     secretKey,
+		cryptoKey:     cryptoKey,
+		trustedSubnet: trustedSubnet,
+	}
+}
+
+// clientIP определяет IP клиента для журнала аудита.
+func clientIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // ServerRouter возвращает chi Router со всеми настроенными эндпоинтами метрик.
@@ -61,9 +81,9 @@ func (h *MetricsHandler) ServerRouter() chi.Router {
 	}))
 
 	r.Get("/value/{metricType}/{metricName}", h.GetMetric)
-	r.Post("/update/{metricType}/{metricName}/{metricValue}", middleware.SignMiddleware(h.UpdateMetric, h.secretKey, h.logger))
-	r.Post("/update/", h.withDecryption(middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSON, h.secretKey, h.logger))))
-	r.Post("/updates/", h.withDecryption(middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSONBatch, h.secretKey, h.logger))))
+	r.Post("/update/{metricType}/{metricName}/{metricValue}", h.withTrustedSubnet(middleware.SignMiddleware(h.UpdateMetric, h.secretKey, h.logger)))
+	r.Post("/update/", h.withTrustedSubnet(h.withDecryption(middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSON, h.secretKey, h.logger)))))
+	r.Post("/updates/", h.withTrustedSubnet(h.withDecryption(middleware.GzipMiddleware(middleware.SignMiddleware(h.UpdateMetricJSONBatch, h.secretKey, h.logger)))))
 	r.Post("/value/", middleware.GzipMiddleware(h.GetMetricJSON))
 	r.Get("/ping", h.CheckDB)
 	return r
@@ -79,6 +99,14 @@ func (h *MetricsHandler) withDecryption(next http.HandlerFunc) http.HandlerFunc 
 	return middleware.DecryptMiddleware(next, h.cryptoKey, h.logger)
 }
 
+// withTrustedSubnet оборачивает обработчик в TrustedSubnetMiddleware.
+func (h *MetricsHandler) withTrustedSubnet(next http.HandlerFunc) http.HandlerFunc {
+	if h.trustedSubnet == nil {
+		return next
+	}
+	return middleware.TrustedSubnetMiddleware(next, h.trustedSubnet, h.logger)
+}
+
 func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 	var strValue string
 
@@ -89,7 +117,6 @@ func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
 
 	switch value.MType {
 	case "gauge":
@@ -111,10 +138,10 @@ func (h *MetricsHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = io.WriteString(w, strValue)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	w.WriteHeader(http.StatusOK)
+
+	if _, err = io.WriteString(w, strValue); err != nil {
+		h.logger.Errorw("failed to write response", "error", err)
 	}
 }
 
@@ -150,9 +177,7 @@ func (h *MetricsHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
 		metric.Delta = &intValue
 	}
 
-	ip := r.RemoteAddr
-
-	ctx := context.WithValue(r.Context(), clientIPKey, ip)
+	ctx := observer.WithClientIP(r.Context(), clientIP(r))
 
 	if err := h.service.SetMetric(ctx, metric); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -169,22 +194,29 @@ func (h *MetricsHandler) UpdateMetricJSON(w http.ResponseWriter, r *http.Request
 	var metric models.Metrics
 
 	if err := json.NewDecoder(r.Body).Decode(&metric); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
 	}
 
-	h.logger.Infof("update metric %s type %s value %d, delta %d", metric.ID, metric.MType, metric.Value, metric.Delta)
+	h.logger.Debugw("update metric",
+		"id", metric.ID,
+		"type", metric.MType,
+		"value", metric.Value,
+		"delta", metric.Delta,
+	)
 
-	ip := r.RemoteAddr
+	ctx := observer.WithClientIP(r.Context(), clientIP(r))
 
-	ctx := context.WithValue(r.Context(), clientIPKey, ip)
-
-	err := h.service.SetMetric(ctx, metric)
-	if err != nil {
+	if err := h.service.SetMetric(ctx, metric); err != nil {
+		h.logger.Errorw("failed to update metric", "id", metric.ID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		h.logger.Errorf("failed to update metric %s: %v", metric.ID, err)
+		return
 	}
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		h.logger.Errorw("failed to encode response", "error", err)
+	}
 }
 
 func (h *MetricsHandler) GetMetricJSON(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +224,7 @@ func (h *MetricsHandler) GetMetricJSON(w http.ResponseWriter, r *http.Request) {
 
 	var metric models.Metrics
 	if err := json.NewDecoder(r.Body).Decode(&metric); err != nil {
-		h.logger.Warn("failed to decode request body", "error", err)
+		h.logger.Warnw("failed to decode request body", "error", err)
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
@@ -233,23 +265,23 @@ func (h *MetricsHandler) UpdateMetricJSONBatch(w http.ResponseWriter, r *http.Re
 	var metrics []models.Metrics
 
 	if err := json.NewDecoder(r.Body).Decode(&metrics); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
 	}
-	h.logger.Info("update metrics", zap.Any("metrics", metrics))
+	h.logger.Debugw("update metrics batch", "count", len(metrics))
 
-	ip := r.RemoteAddr
+	ctx := observer.WithClientIP(r.Context(), clientIP(r))
 
-	ctx := context.WithValue(r.Context(), clientIPKey, ip)
-
-	err := h.service.SetMetricBatch(ctx, metrics)
-
-	if err != nil {
+	if err := h.service.SetMetricBatch(ctx, metrics); err != nil {
+		h.logger.Errorw("failed to update metrics batch", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		h.logger.Errorf("failed to update metrics batch: %v", err)
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		h.logger.Errorw("failed to encode response", "error", err)
+	}
 }
 
 func (h *MetricsHandler) CheckDB(w http.ResponseWriter, r *http.Request) {

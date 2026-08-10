@@ -11,61 +11,49 @@ type testObject struct {
 	Value int
 }
 
-func (t testObject) Reset() {
-	t.Value = 0
-}
+func (t *testObject) Reset() { t.Value = 0 }
 
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject]()
+	p := New[*testObject]()
 	assert.NotNil(t, p)
 }
 
-func TestPool_Get_Put(t *testing.T) {
+func TestPut_ResetsObject(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject]()
+	p := New[*testObject]()
 
-	obj := testObject{Value: 42}
+	obj := &testObject{Value: 42}
 	p.Put(obj)
 
-	got := p.Get()
-	assert.Equal(t, 42, got.Value)
+	assert.Equal(t, 0, obj.Value, "Put должен сбрасывать состояние объекта")
 }
 
-func TestPool_Get_Empty(t *testing.T) {
+func TestGet_EmptyPoolReturnsZeroValue(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject]()
+	p := New[*testObject]()
 
-	got := p.Get()
-	// Проверяем zero value
-	assert.Equal(t, 0, got.Value)
+	assert.Nil(t, p.Get(), "у пула нет фабрики, поэтому пустой пул отдаёт zero value")
 }
 
-func TestPool_ObjectLifecycle(t *testing.T) {
+func TestGet_NeverReturnsStaleState(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject]()
+	p := New[*testObject]()
+	p.Put(&testObject{Value: 100})
 
-	obj := testObject{Value: 100}
-	p.Put(obj)
-
-	got := p.Get()
-	assert.Equal(t, 100, got.Value)
-
-	objReset := testObject{Value: 0}
-	p.Put(objReset)
-
-	got2 := p.Get()
-	assert.Equal(t, 0, got2.Value)
+	if got := p.Get(); got != nil {
+		assert.Equal(t, 0, got.Value)
+	}
 }
 
 func TestPool_Concurrent(t *testing.T) {
 	t.Parallel()
 
-	p := New[testObject]()
+	p := New[*testObject]()
 
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
@@ -73,11 +61,12 @@ func TestPool_Concurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
-				obj := p.Get()
-				if obj.Value != 0 {
-					obj.Value = 0
+				if obj := p.Get(); obj != nil {
+					obj.Value = j
+					p.Put(obj)
+					continue
 				}
-				p.Put(testObject{Value: j})
+				p.Put(&testObject{Value: j})
 			}
 		}()
 	}
@@ -85,15 +74,11 @@ func TestPool_Concurrent(t *testing.T) {
 	wg.Wait()
 }
 
-func TestPool_PointerType(t *testing.T) {
+func TestResetterConstraint(t *testing.T) {
 	t.Parallel()
 
-	type pointerStruct struct {
-		Value int
-	}
+	var r Resetter = &testObject{Value: 10}
+	r.Reset()
 
-	ps := pointerStruct{Value: 10}
-	// testObject уже реализует Resetter, используем его
-	var _ Resetter = testObject{Value: 10}
-	assert.Equal(t, 10, ps.Value)
+	assert.Equal(t, 0, r.(*testObject).Value)
 }

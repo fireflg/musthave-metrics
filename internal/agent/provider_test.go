@@ -13,8 +13,8 @@ func TestNextPollCount(t *testing.T) {
 	p := &agent.Provider{}
 
 	assert.Equal(t, 1.0, p.NextPollCount())
-	assert.Equal(t, 2.0, p.NextPollCount())
-	assert.Equal(t, 3.0, p.NextPollCount())
+	assert.Equal(t, 1.0, p.NextPollCount())
+	assert.Equal(t, 1.0, p.NextPollCount())
 }
 
 func TestCollectRuntimeMemStats(t *testing.T) {

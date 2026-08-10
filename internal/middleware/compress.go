@@ -9,8 +9,9 @@ import (
 
 // compressWriter оборачивает http.ResponseWriter для gzip сжатия ответа.
 type compressWriter struct {
-	w  http.ResponseWriter
-	zw *gzip.Writer
+	w           http.ResponseWriter
+	zw          *gzip.Writer
+	wroteHeader bool
 }
 
 // newCompressWriter создает новый экземпляр compressWriter.
@@ -26,17 +27,20 @@ func (c *compressWriter) Header() http.Header {
 }
 
 func (c *compressWriter) Write(p []byte) (int, error) {
-	if c.w.Header().Get("Content-Encoding") == "" {
-		c.w.Header().Set("Content-Encoding", "gzip")
-		c.w.WriteHeader(http.StatusOK)
+	if !c.wroteHeader {
+		c.WriteHeader(http.StatusOK)
 	}
 	return c.zw.Write(p)
 }
 
 func (c *compressWriter) WriteHeader(statusCode int) {
-	if statusCode < 300 {
-		c.w.Header().Set("Content-Encoding", "gzip")
+	if c.wroteHeader {
+		return
 	}
+	c.wroteHeader = true
+
+	c.w.Header().Set("Content-Encoding", "gzip")
+	c.w.Header().Del("Content-Length")
 	c.w.WriteHeader(statusCode)
 }
 

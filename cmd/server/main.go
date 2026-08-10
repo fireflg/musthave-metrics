@@ -13,6 +13,7 @@ import (
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"go.uber.org/zap"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -59,7 +60,15 @@ func main() {
 		}
 	}
 
-	metricsHandler := handler.NewMetricsHandler(metricsService, logger.Sugar(), cryptoKey)
+	var trustedSubnet *net.IPNet
+	if cfg.TrustedSubnet != "" {
+		_, trustedSubnet, err = net.ParseCIDR(cfg.TrustedSubnet)
+		if err != nil {
+			logger.Fatal("Failed to parse trusted subnet", zap.Error(err))
+		}
+	}
+
+	metricsHandler := handler.NewMetricsHandler(metricsService, logger.Sugar(), cfg.HashKey, cryptoKey, trustedSubnet)
 	r := metricsHandler.ServerRouter()
 
 	ctx, stop := signal.NotifyContext(
@@ -87,9 +96,15 @@ func main() {
 		}
 	}()
 
+	grpcSrv := startGRPCServer(cfg.GRPCAddr, metricsService, trustedSubnet, logger)
+
 	<-ctx.Done()
 
 	logger.Info("Starting graceful shutdown...")
+
+	if grpcSrv != nil {
+		grpcSrv.GracefulStop()
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

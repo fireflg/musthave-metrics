@@ -216,17 +216,25 @@ func (v *contextVisitor) hasContextParam(decl *ast.FuncDecl) bool {
 				return true
 			}
 		}
+		if isContextSelector(field.Type) {
+			return true
+		}
 		if star, ok := field.Type.(*ast.StarExpr); ok {
-			if sel, ok := star.X.(*ast.SelectorExpr); ok {
-				if ident, ok := sel.X.(*ast.Ident); ok {
-					if ident.Name == "context" && sel.Sel.Name == "Context" {
-						return true
-					}
-				}
+			if isContextSelector(star.X) {
+				return true
 			}
 		}
 	}
 	return false
+}
+
+func isContextSelector(expr ast.Expr) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	return ok && ident.Name == "context" && sel.Sel.Name == "Context"
 }
 
 func runContext(pass *analysis.Pass) (interface{}, error) {

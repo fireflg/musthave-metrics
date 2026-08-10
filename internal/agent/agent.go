@@ -14,6 +14,12 @@ import (
 	"go.uber.org/zap"
 )
 
+// Интервалы по умолчанию, если в конфигурации задано неположительное значение.
+const (
+	defaultPollInterval   = 2 * time.Second
+	defaultReportInterval = 10 * time.Second
+)
+
 // Agent собирает и отправляет системные метрики на удаленный сервер.
 type Agent struct {
 	cfg      *Config
@@ -49,25 +55,58 @@ func (a *Agent) collectMetrics() []Metrics {
 	return result
 }
 
-func (a *Agent) runPoller(ctx context.Context, metricsCh chan Metrics, pollInterval time.Duration) {
+type metricsBuffer struct {
+	mu    sync.Mutex
+	items []Metrics
+}
+
+func (b *metricsBuffer) add(items ...Metrics) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.items = append(b.items, items...)
+}
+
+func (b *metricsBuffer) drain() []Metrics {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	items := b.items
+	b.items = nil
+	return items
+}
+
+func (a *Agent) runPoller(ctx context.Context, buf *metricsBuffer, pollInterval time.Duration) {
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		buf.add(a.collectMetrics()...)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (a *Agent) runReporter(ctx context.Context, buf *metricsBuffer, metricsCh chan<- Metrics, reportInterval time.Duration) {
+	ticker := time.NewTicker(reportInterval)
+	defer ticker.Stop()
+	defer close(metricsCh)
+
 	for {
 		select {
 		case <-ctx.Done():
-			close(metricsCh)
 			return
-		default:
-			metrics := a.collectMetrics()
-			for _, metric := range metrics {
-				metricsCh <- metric
-			}
+		case <-ticker.C:
+		}
 
-			if pollInterval > 0 {
-				select {
-				case <-time.After(pollInterval):
-				case <-ctx.Done():
-					close(metricsCh)
-					return
-				}
+		for _, metric := range buf.drain() {
+			select {
+			case metricsCh <- metric:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}
@@ -80,9 +119,9 @@ func (a *Agent) metricsWorker(ctx context.Context, metricsCh <-chan Metrics) {
 			if !ok {
 				return
 			}
-			a.logger.Info("Sending metrics", zap.Any("metric", metric))
+			a.logger.Debugw("Sending metrics", "count", len(metric))
 			if err := a.reporter.Report(ctx, metric); err != nil {
-				a.logger.Info("Sending metrics", zap.Any("metric", metric))
+				a.logger.Errorw("Failed to send metrics", "error", err)
 			}
 		case <-ctx.Done():
 			return
@@ -90,11 +129,24 @@ func (a *Agent) metricsWorker(ctx context.Context, metricsCh <-chan Metrics) {
 	}
 }
 
-// Start запускает агент сбора метрик.
+// Start запускает агент сбора метрик и возвращает управление после отмены ctx.
 func (a *Agent) Start(ctx context.Context) error {
-	metricsCh := make(chan Metrics, a.cfg.RateLimit*2)
+	pollInterval := intervalOrDefault(a.cfg.PollInterval, defaultPollInterval)
+	reportInterval := intervalOrDefault(a.cfg.ReportInterval, defaultReportInterval)
 
-	a.logger.Infof("Agent started")
+	rateLimit := a.cfg.RateLimit
+	if rateLimit < 1 {
+		rateLimit = 1
+	}
+
+	metricsCh := make(chan Metrics, rateLimit*2)
+	buf := &metricsBuffer{}
+
+	a.logger.Infow("Agent started",
+		"poll_interval", pollInterval,
+		"report_interval", reportInterval,
+		"rate_limit", rateLimit,
+	)
 
 	if err := a.reporter.WaitServer(ctx); err != nil {
 		return err
@@ -105,10 +157,16 @@ func (a *Agent) Start(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		a.runPoller(ctx, metricsCh, time.Duration(a.cfg.PollInterval)*time.Second)
+		a.runPoller(ctx, buf, pollInterval)
 	}()
 
-	for i := 0; i < a.cfg.RateLimit; i++ {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.runReporter(ctx, buf, metricsCh, reportInterval)
+	}()
+
+	for i := 0; i < rateLimit; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -118,5 +176,13 @@ func (a *Agent) Start(ctx context.Context) error {
 
 	<-ctx.Done()
 	wg.Wait()
-	return ctx.Err()
+
+	return nil
+}
+
+func intervalOrDefault(seconds int, fallback time.Duration) time.Duration {
+	if seconds <= 0 {
+		return fallback
+	}
+	return time.Duration(seconds) * time.Second
 }

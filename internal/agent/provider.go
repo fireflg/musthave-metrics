@@ -13,7 +13,8 @@ import (
 
 // Provider собирает системные метрики и метрики runtime.
 type Provider struct {
-	count int64
+	count    int64
+	reported int64
 }
 
 // MetricsProvider определяет интерфейс для сбора метрик.
@@ -29,9 +30,12 @@ type MetricsProvider interface {
 // Metrics — карта имен метрик к их значениям float64.
 type Metrics map[string]float64
 
+// NextPollCount возвращает прирост счётчика опросов с прошлого вызова.
+// Сервер сам суммирует delta, поэтому накопленное значение отправлять нельзя.
 func (p *Provider) NextPollCount() float64 {
-	atomic.AddInt64(&p.count, 1)
-	return float64(p.count)
+	total := atomic.AddInt64(&p.count, 1)
+	prev := atomic.SwapInt64(&p.reported, total)
+	return float64(total - prev)
 }
 
 func (p *Provider) CollectRuntimeMemStats() Metrics {

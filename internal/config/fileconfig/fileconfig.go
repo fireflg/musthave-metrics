@@ -36,6 +36,8 @@ type ServerConfig struct {
 	StoreFile     *string   `json:"store_file"`
 	DatabaseDSN   *string   `json:"database_dsn"`
 	CryptoKey     *string   `json:"crypto_key"`
+	TrustedSubnet *string   `json:"trusted_subnet"`
+	GRPCAddress   *string   `json:"grpc_address"`
 }
 
 // AgentConfig описывает поля файла конфигурации агента.
@@ -44,6 +46,7 @@ type AgentConfig struct {
 	ReportInterval *Duration `json:"report_interval"`
 	PollInterval   *Duration `json:"poll_interval"`
 	CryptoKey      *string   `json:"crypto_key"`
+	GRPCAddress    *string   `json:"grpc_address"`
 }
 
 // LoadServerConfig читает и разбирает файл конфигурации сервера.

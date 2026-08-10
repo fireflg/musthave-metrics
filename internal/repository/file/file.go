@@ -20,8 +20,9 @@ type FileRepository struct {
 	storageRestore  bool
 	storagePath     string
 	memory.MemoryRepository
-	mu     sync.Mutex
-	stopCh chan struct{}
+	mu       sync.Mutex
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 // NewFileRepository создает новый FileRepository.
@@ -139,7 +140,7 @@ func (f *FileRepository) startPeriodicSave() {
 		select {
 		case <-ticker.C:
 			if err := f.StoreMetrics(); err != nil {
-				return
+				log.Printf("Error storing metrics: %v", err)
 			}
 		case <-f.stopCh:
 			return
@@ -147,25 +148,27 @@ func (f *FileRepository) startPeriodicSave() {
 	}
 }
 
-// Close останавливает периодическое сохранение и выполняет финальный сброс
-// накопленных метрик на диск.
+// Close останавливает периодическое сохранение и сбрасывает метрики на диск.
 func (f *FileRepository) Close() error {
-	if f.stopCh != nil {
-		close(f.stopCh)
-	}
+	f.stopOnce.Do(func() {
+		if f.stopCh != nil {
+			close(f.stopCh)
+		}
+	})
 	return f.StoreMetrics()
 }
 
 // StoreMetrics сохраняет все метрики в файл.
 func (f *FileRepository) StoreMetrics() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	metrics := f.MemoryRepository.GetAllMetrics()
+
 	data, err := json.MarshalIndent(metrics, "", "  ")
 	if err != nil {
 		return fmt.Errorf("StoreMetrics: marshal json: %w", err)
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	dir := filepath.Dir(f.storagePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {

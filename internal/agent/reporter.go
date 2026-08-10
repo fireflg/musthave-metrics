@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/hmac"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/crypto"
 	"github.com/hashicorp/go-retryablehttp"
 )
 
@@ -20,6 +22,7 @@ type Reporter struct {
 	serverURL string
 	client    *retryablehttp.Client
 	secretKey string
+	publicKey *rsa.PublicKey
 }
 
 // MetricsReporter определяет интерфейс для отправки метрик на сервер.
@@ -31,7 +34,7 @@ type MetricsReporter interface {
 }
 
 // NewReporter создает новый экземпляр Reporter.
-func NewReporter(serverURL string, secretKey string) *Reporter {
+func NewReporter(serverURL string, secretKey string, publicKey *rsa.PublicKey) *Reporter {
 	client := retryablehttp.NewClient()
 	// Временный хардкод параметров
 	client.RetryMax = 15
@@ -42,6 +45,7 @@ func NewReporter(serverURL string, secretKey string) *Reporter {
 		serverURL: serverURL,
 		client:    client,
 		secretKey: secretKey,
+		publicKey: publicKey,
 	}
 }
 
@@ -76,9 +80,17 @@ func (r *Reporter) Report(ctx context.Context, metrics Metrics) error {
 		return err
 	}
 
+	body := compressed
+	if r.publicKey != nil {
+		body, err = crypto.Encrypt(r.publicKey, compressed)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt payload: %w", err)
+		}
+	}
+
 	url := fmt.Sprintf("%s/updates/", r.serverURL)
 
-	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(compressed))
+	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

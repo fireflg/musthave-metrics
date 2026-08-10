@@ -232,7 +232,7 @@ func createTestServer() *httptest.Server {
 	repo := memory.NewMemoryRepository()
 	svc := service.NewMetricsService(repo, nil)
 
-	h := handler.NewMetricsHandler(svc, sugar)
+	h := handler.NewMetricsHandler(svc, sugar, nil)
 	r := h.ServerRouter()
 
 	return httptest.NewServer(r)

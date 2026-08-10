@@ -8,6 +8,7 @@ package agent
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -99,12 +100,23 @@ func (a *Agent) Start(ctx context.Context) error {
 		return err
 	}
 
-	go a.runPoller(ctx, metricsCh, time.Duration(a.cfg.PollInterval)*time.Second)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.runPoller(ctx, metricsCh, time.Duration(a.cfg.PollInterval)*time.Second)
+	}()
 
 	for i := 0; i < a.cfg.RateLimit; i++ {
-		go a.metricsWorker(ctx, metricsCh)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.metricsWorker(ctx, metricsCh)
+		}()
 	}
 
 	<-ctx.Done()
+	wg.Wait()
 	return ctx.Err()
 }

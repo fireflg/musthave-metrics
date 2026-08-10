@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
+	"errors"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/buildinfo"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/config/server"
+	"github.com/fireflg/go-musthave-metrics-tpl/internal/crypto"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/handler"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/observer"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/repository"
 	"github.com/fireflg/go-musthave-metrics-tpl/internal/service"
 	"go.uber.org/zap"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -46,13 +50,22 @@ func main() {
 	}
 
 	metricsService := service.NewMetricsService(repo, observers)
-	metricsHandler := handler.NewMetricsHandler(metricsService, logger.Sugar())
+
+	var cryptoKey *rsa.PrivateKey
+	if cfg.CryptoKeyPath != "" {
+		cryptoKey, err = crypto.LoadPrivateKey(cfg.CryptoKeyPath)
+		if err != nil {
+			logger.Fatal("Failed to load private key", zap.Error(err))
+		}
+	}
+
+	metricsHandler := handler.NewMetricsHandler(metricsService, logger.Sugar(), cryptoKey)
 	r := metricsHandler.ServerRouter()
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
-		syscall.SIGTERM,
+		syscall.SIGTERM, syscall.SIGQUIT,
 	)
 	defer stop()
 
@@ -65,7 +78,7 @@ func main() {
 
 	go func() {
 		sugar.Infof("Starting server on %s", cfg.RunAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatal(
 				"server failed to start",
 				zap.String("addr", cfg.RunAddr),
@@ -83,6 +96,12 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("server shutdown failed", zap.Error(err))
+	}
+
+	if closer, ok := repo.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			logger.Error("repository shutdown failed", zap.Error(err))
+		}
 	}
 
 	if observers != nil {
